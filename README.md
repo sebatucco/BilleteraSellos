@@ -72,8 +72,10 @@ src/BilleteraSellos.Api/
   Dominio/Entidades.cs        Comercio, ProgramaSellos, Cliente, Tarjeta, Movimiento, Canje, Aviso
   Dominio/Seguridad.cs        Usuario (dueño/cajero), Sesion, CodigoVerificacion
   Seguridad/Autenticacion.cs  Contraseñas, tokens, sesiones y permisos por comercio
-  Seguridad/CodigosSms.cs     Códigos de verificación (hoy: consola; después SMS)
+  Seguridad/CodigosSms.cs     Códigos de verificación por SMS
+  Seguridad/Envios.cs         Envío por Twilio (SMS/WhatsApp) y SMTP, o consola en desarrollo
   Endpoints/AuthEndpoints.cs  Login, registro de comercios, equipo
+  Endpoints/ContrasenaEndpoints.cs  Cambiar y recuperar contraseña
   Datos/AppDbContext.cs       Acceso a la base (EF Core)
   Datos/DatosDemo.cs          Datos de ejemplo (solo en Development)
   Servicios/Reglas.cs         Niveles, clientes que se enfrían, calculadora de costo, códigos
@@ -103,6 +105,46 @@ src/BilleteraSellos.Api/
 | Saludo de cumpleaños y "te extrañamos", sin repetir en 14 días | `Tareas/AvisosAutomaticos.cs` |
 | El cliente acepta o no promos de cada comercio | `PUT /api/billetera/tarjetas/{tarjetaId}/promos` |
 | Reseña de Google como link, sin premio a cambio | `Comercio.ResenaGoogleUrl` |
+
+## Configurar SMS y email
+
+Por defecto los códigos SMS y los emails se escriben en la consola (sirve para desarrollar). Para enviarlos de verdad, completá `appsettings.json` o, mejor, variables de entorno en el servidor (así las claves no quedan en el repositorio; por ejemplo `Sms__Twilio__AuthToken`).
+
+**SMS o WhatsApp con Twilio** (crear cuenta en https://www.twilio.com y comprar un número, o usar el sandbox de WhatsApp para probar):
+
+```json
+"Sms": {
+  "Proveedor": "Twilio",
+  "Twilio": {
+    "AccountSid": "ACxxxxxxxxxxxxxxxx",
+    "AuthToken": "tu-auth-token",
+    "From": "+1XXXXXXXXXX",
+    "Canal": "sms"
+  }
+}
+```
+
+- Con `"Canal": "whatsapp"` el código sale por WhatsApp (el `From` tiene que ser un número de WhatsApp habilitado en Twilio).
+- Los teléfonos se aceptan como la gente los escribe (`011 15 5487-3320`, `+54 9 11 5487 3320`, `11 5487 3320`) y se envían como `+5491154873320`.
+- Si Twilio falla, el cliente ve "No pudimos enviar el código..." y el detalle queda en el log, con el número oculto.
+- Con SMS real configurado, la respuesta nunca incluye el código, ni siquiera en desarrollo.
+
+**Email por SMTP** (sirve Gmail con contraseña de aplicación, Brevo, SendGrid, Amazon SES, etc.):
+
+```json
+"Email": {
+  "Proveedor": "Smtp",
+  "Smtp": { "Host": "smtp-relay.brevo.com", "Puerto": 587, "Usuario": "...", "Contrasena": "...", "De": "no-responder@tudominio.com", "UsarSsl": true }
+},
+"UrlPublica": "https://tudominio.com"
+```
+
+`UrlPublica` es la dirección del sitio, para armar el link de "crear contraseña nueva". Si falta un dato obligatorio, la aplicación no arranca y dice cuál. En producción, si SMS o email siguen en `Consola`, lo avisa en el log al arrancar.
+
+## Contraseñas del panel
+
+- **Cambiar:** en el panel, "Cambiar mi contraseña". Pide la actual y cierra las sesiones en otros dispositivos.
+- **Olvidé mi contraseña:** desde el login. Llega un email con un link que vence en 1 hora y sirve una sola vez. Al usarlo, la cuenta se desbloquea y se cierran todas las sesiones. Se mandan como máximo 3 links por hora por usuario, y la respuesta es siempre la misma exista o no el email.
 
 ## 4. Pasar a PostgreSQL (cuando subas a un servidor)
 
@@ -172,8 +214,7 @@ bash pruebas/humo.sh http://localhost:5225
 
 En este orden:
 
-1. **SMS reales.** Reemplazar `EnviadorCodigosConsola` por una implementación de `IEnviadorCodigos` con un proveedor de SMS o WhatsApp (por ejemplo Twilio). Mientras tanto, en producción nadie podría recibir el código.
-   Faltan también: recuperar contraseña por email, cambiar la contraseña y, al publicar, configurar `Cors:OrigenesPermitidos` con el dominio real y servir todo por HTTPS.
+1. **Cuentas de Twilio y SMTP.** El código ya está (ver "Configurar SMS y email"): falta crear las cuentas, cargar las claves en el servidor y probar con un celular real. Al publicar, configurar también `Cors:OrigenesPermitidos` y `UrlPublica` con el dominio real y servir todo por HTTPS.
 2. **Migraciones de EF Core** en lugar de `EnsureCreated`, para cambiar el modelo sin perder datos:
    ```
    dotnet tool install --global dotnet-ef

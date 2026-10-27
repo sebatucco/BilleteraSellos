@@ -103,11 +103,12 @@ public class Sesiones(AppDbContext db)
         await db.SaveChangesAsync();
     }
 
-    /// <summary>Corta todas las sesiones abiertas de un usuario (al desactivarlo o cambiarle la contraseña).</summary>
-    public async Task CerrarTodasDeUsuarioAsync(int usuarioId)
+    /// <summary>Corta todas las sesiones abiertas de un usuario (al desactivarlo o cambiarle la contraseña).
+    /// Con <paramref name="salvo"/> deja abierta esa sesión (la de quien está haciendo el cambio).</summary>
+    public async Task CerrarTodasDeUsuarioAsync(int usuarioId, int? salvo = null)
     {
         var ahora = DateTime.UtcNow;
-        foreach (var s in await db.Sesiones.Where(x => x.UsuarioId == usuarioId && x.RevocadaEn == null).ToListAsync())
+        foreach (var s in await db.Sesiones.Where(x => x.UsuarioId == usuarioId && x.RevocadaEn == null && x.Id != salvo).ToListAsync())
             s.RevocadaEn = ahora;
         await db.SaveChangesAsync();
     }

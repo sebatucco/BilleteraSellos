@@ -87,17 +87,21 @@ public static class AuthEndpoints
         });
 
         // Cliente, paso 1: pide un código al teléfono.
-        g.MapPost("/clientes/codigo", async (CodigoPedido p, CodigosVerificacion codigos, IHostEnvironment env) =>
+        g.MapPost("/clientes/codigo", async (CodigoPedido p, CodigosVerificacion codigos, IHostEnvironment env, IEnviadorCodigos enviador) =>
         {
             var tel = CodigosVerificacion.Normalizar(p.Telefono ?? "");
             if (tel.Length is < 8 or > 13) return Results.BadRequest(new { error = "Escribí el teléfono con código de área, por ejemplo 11 5487 3320." });
-            var (resultado, codigo) = await codigos.SolicitarAsync(tel);
+            ResultadoSolicitud resultado; string? codigo;
+            try { (resultado, codigo) = await codigos.SolicitarAsync(tel); }
+            catch (EnvioFallidoException ex) { return Results.Json(new { error = ex.Message }, statusCode: 502); }
+            // Solo se devuelve el código si es desarrollo y no hay SMS real configurado.
+            if (!env.IsDevelopment() || enviador is not EnviadorCodigosConsola) codigo = null;
             return resultado switch
             {
                 ResultadoSolicitud.EsperarUnMinuto => Results.Json(new { error = "Ya te mandamos un código. Esperá un minuto para pedir otro." }, statusCode: 429),
                 ResultadoSolicitud.DemasiadosPorHora => Results.Json(new { error = "Pediste demasiados códigos. Probá de nuevo en una hora." }, statusCode: 429),
                 // El código solo vuelve en la respuesta en desarrollo, para poder probar sin SMS.
-                _ => Results.Ok(new CodigoEnviado("Te mandamos un código por SMS.", (int)CodigosVerificacion.Vigencia.TotalMinutes, env.IsDevelopment() ? codigo : null)),
+                _ => Results.Ok(new CodigoEnviado("Te mandamos un código por SMS.", (int)CodigosVerificacion.Vigencia.TotalMinutes, codigo)),
             };
         });
 
@@ -179,7 +183,7 @@ public static class AuthEndpoints
         });
     }
 
-    static string? NormalizarEmail(string? email)
+    internal static string? NormalizarEmail(string? email)
     {
         if (string.IsNullOrWhiteSpace(email) || email.Length > 200) return null;
         try { return new MailAddress(email.Trim()).Address.ToLowerInvariant(); }
