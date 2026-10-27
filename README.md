@@ -63,6 +63,21 @@ Para empezar de cero con los datos de ejemplo, borrá `billetera.db` y volvé a 
 - **Tokens:** cada login devuelve un token que se manda en `Authorization: Bearer <token>`. En la base solo se guarda su hash. Se cierra con `POST /api/auth/salir`, y desactivar un cajero corta su acceso al instante.
 - **Protecciones:** contraseñas con PBKDF2-SHA256, bloqueo de 15 minutos tras 5 contraseñas incorrectas, códigos SMS que vencen a los 10 minutos con 5 intentos, máximo 5 códigos por hora por teléfono y 20 pedidos de login por minuto por IP. Cada comercio solo puede ver y tocar sus propios datos.
 
+## QR, cartel del mostrador y app instalable
+
+- **QR del cliente:** en la billetera, el botón **Mostrar mi QR** lo abre a pantalla completa sobre fondo blanco y evita que la pantalla se apague mientras se muestra.
+- **Escanear en la caja:** en el panel, **Escanear QR del cliente** abre la cámara. Usa el lector que trae el navegador (`BarcodeDetector`, en Chrome para Android) y, si no existe (Safari, Firefox), `jsQR`. Si la cámara no está disponible o se niega el permiso, se puede buscar por DNI o teléfono como siempre.
+- **Cartel del mostrador:** en el panel, **Imprimir cartel** abre `cartel.html?c=<codigo>` con el nombre del comercio, el premio y un QR que lleva a `/#unirse=<codigo>`. El cliente lo escanea con la cámara, entra con su celular (o se registra) y la tarjeta se suma sola a su billetera.
+- **App instalable (PWA):** desde el celular se puede "Agregar a la pantalla de inicio" y abre como una app. El service worker guarda solo la parte visual (páginas, scripts, íconos) para que abra rápido y sin conexión. **Nunca guarda respuestas de `/api`**, que tienen datos personales. Al publicar cambios en esos archivos, subí `VERSION` en `wwwroot/sw.js`.
+- Las librerías de QR están en `wwwroot/lib` con sus licencias: qrcode-generator 1.4.4 (MIT) y jsQR 1.4.0 (Apache 2.0).
+
+### Probar la cámara desde el celular
+
+Los navegadores solo dejan usar la cámara (y el service worker) en **HTTPS** o en `localhost`. En la PC alcanza con `http://localhost:5225`. Para probar desde el celular en la misma red hay dos opciones:
+
+1. **HTTPS local:** ejecutá `dotnet dev-certs https --trust` una vez y corré con `dotnet run --launch-profile https`. Después entrá desde el celular a `https://<IP-de-tu-PC>:7160`. Para que escuche en la red, agregá `--urls "https://0.0.0.0:7160"`. El celular va a avisar que el certificado no es de confianza: aceptalo solo para probar.
+2. **Túnel (más simple):** con una herramienta como `cloudflared tunnel --url http://localhost:5225` o ngrok obtenés una dirección `https://...` pública que abre tu PC desde cualquier celular.
+
 ## 3. Cómo está armado
 
 ```
@@ -79,7 +94,11 @@ src/BilleteraSellos.Api/
   Endpoints/ComercioEndpoints.cs   Lo que usa la caja
   Endpoints/ClienteEndpoints.cs    Lo que usa la billetera
   Tareas/AvisosAutomaticos.cs      Cumpleaños y reactivación, una vez por día
-  wwwroot/index.html               Pantalla de prueba
+  wwwroot/index.html               Pantalla de prueba (billetera y panel)
+  wwwroot/cartel.html              Cartel imprimible con el QR del comercio
+  wwwroot/js/qr.js                 Dibujo de QR
+  wwwroot/sw.js, manifest.json     App instalable (PWA)
+  wwwroot/lib, wwwroot/iconos      Librerías de QR e íconos de la app
 ```
 
 ### Reglas de negocio ya implementadas

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartel para el mostrador</title>
+<link rel="icon" href="/iconos/favicon-32.png">
+<style>
+:root{--azul:#2C47D6;--tinta:#171A26;--suave:#5D6375;--linea:#D3D7E2;--fondo:#EEF0F5}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--fondo);color:var(--tinta);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
+.barra{max-width:560px;margin:0 auto 16px;display:flex;gap:8px;justify-content:space-between;align-items:center}
+.barra a{color:var(--azul);font-weight:600;text-decoration:none}
+button{font:inherit;font-weight:600;cursor:pointer;border:0;border-radius:10px;padding:10px 16px;background:var(--azul);color:#fff}
+/* La hoja: proporción A5 vertical, se imprime sola en la página */
+.hoja{max-width:560px;margin:0 auto;background:#fff;border-radius:20px;padding:36px 32px 28px;display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center;border:1px solid var(--linea)}
+.marca{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--azul)}
+h1{margin:0;font-size:34px;line-height:1.1;text-wrap:balance}
+.premio{margin:0;font-size:19px;text-wrap:balance}
+.premio b{color:var(--azul)}
+.qr{padding:10px;border:3px solid var(--tinta);border-radius:16px;line-height:0}
+.pasos{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%}
+.pasos li{background:var(--fondo);border-radius:12px;padding:12px 8px;font-size:14px}
+.pasos b{display:block;font-size:22px;color:var(--azul)}
+.pie{font-size:12px;color:var(--suave);word-break:break-all}
+.error{max-width:560px;margin:40px auto;text-align:center}
+@media (max-width:460px){.hoja{padding:24px 16px}h1{font-size:28px}.pasos{grid-template-columns:1fr}}
+@media print{
+  @page{size:A5 portrait;margin:10mm}
+  body{background:#fff;padding:0}
+  .barra{display:none}
+  .hoja{border:0;border-radius:0;max-width:none;padding:0}
+}
+</style>
+</head>
+<body>
+<div class="barra"><a href="/">← Volver al panel</a><button id="imprimir">Imprimir</button></div>
+<main class="hoja" id="hoja" hidden>
+  <span class="marca">Tarjeta de sellos digital</span>
+  <h1 id="nombre"></h1>
+  <p class="premio" id="premio"></p>
+  <div class="qr"><canvas id="qr" aria-label="Código QR para sumar la tarjeta"></canvas></div>
+  <ol class="pasos">
+    <li><b>1</b>Escaneá el código con la cámara</li>
+    <li><b>2</b>Entrá con tu celular, sin instalar nada</li>
+    <li><b>3</b>Mostrá tu QR en cada compra y sumá sellos</li>
+  </ol>
+  <p class="pie" id="pie"></p>
+</main>
+<p class="error" id="error" hidden></p>
+<script src="/lib/qrcode.min.js"></script>
+<script src="/js/qr.js"></script>
+<script>
+(async () => {
+  const codigo = new URLSearchParams(location.search).get("c") || "";
+  const error = msg => { const e = document.getElementById("error"); e.textContent = msg; e.hidden = false; };
+  if (!codigo) return error("Falta el código del comercio en el enlace (por ejemplo cartel.html?c=cafe-tostado).");
+  let comercio;
+  try {
+    const r = await fetch("/api/comercios");
+    comercio = (await r.json()).find(c => c.codigo === codigo);
+  } catch { return error("No se pudo cargar el comercio. Revisá la conexión."); }
+  if (!comercio) return error("No encontramos un comercio con el código " + codigo + ".");
+
+  const enlace = location.origin + "/#unirse=" + encodeURIComponent(codigo);
+  document.title = "Cartel · " + comercio.nombre;
+  document.getElementById("nombre").textContent = comercio.nombre;
+  document.getElementById("premio").innerHTML = comercio.sellosNecesarios
+    ? `Juntá <b>${comercio.sellosNecesarios} sellos</b> y llevate: <b></b>` : "Sumá sellos con cada compra";
+  const b = document.querySelectorAll("#premio b")[1];
+  if (b) b.textContent = comercio.premio;
+  document.getElementById("pie").textContent = enlace;
+  dibujarQR(enlace, document.getElementById("qr"), Math.min(300, window.innerWidth - 90));
+  document.getElementById("hoja").hidden = false;
+})();
+document.getElementById("imprimir").onclick = () => window.print();
+</script>
+</body>
+</html>
