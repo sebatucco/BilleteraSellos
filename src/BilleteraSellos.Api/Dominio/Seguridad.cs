@@ -55,3 +55,15 @@ public class CodigoVerificacion
     public int Intentos { get; set; }
     public DateTime? UsadoEn { get; set; }
 }
+
+/// <summary>Link de un solo uso para restablecer la contraseña de un usuario del panel. Se guarda solo el hash.</summary>
+[Index(nameof(TokenHash), IsUnique = true)]
+public class TokenRestablecimiento
+{
+    public int Id { get; set; }
+    public int UsuarioId { get; set; }
+    [MaxLength(64)] public string TokenHash { get; set; } = "";
+    public DateTime CreadoEn { get; set; } = DateTime.UtcNow;
+    public DateTime VenceEn { get; set; }
+    public DateTime? UsadoEn { get; set; }
+}

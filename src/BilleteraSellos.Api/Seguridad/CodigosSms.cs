@@ -33,12 +33,20 @@ public class CodigosVerificacion(AppDbContext db, IEnviadorCodigos enviador)
     public const int MaxIntentos = 5;
     public const int MaxPorHora = 5;
 
-    /// <summary>Teléfono argentino normalizado: sin +54 ni el 9 de celulares, solo dígitos.</summary>
+    /// <summary>
+    /// Teléfono argentino normalizado a los 10 dígitos de característica + número, como se marca sin el 0 ni el 15:
+    /// "+54 9 11 5487-3320", "011 15 5487-3320" y "11 5487 3320" quedan todos "1154873320".
+    /// </summary>
     public static string Normalizar(string telefono)
     {
         var d = Codigos.SoloDigitos(telefono);
         if (d.StartsWith("549")) d = d[3..];
         else if (d.StartsWith("54")) d = d[2..];
+        d = d.TrimStart('0');
+        // Con el 15 de celular quedan 12 dígitos: se busca el 15 después de una característica de 2, 3 o 4 dígitos.
+        if (d.Length == 12)
+            foreach (var largoArea in new[] { 2, 3, 4 })
+                if (d.Substring(largoArea, 2) == "15") { d = d[..largoArea] + d[(largoArea + 2)..]; break; }
         return d;
     }
 
@@ -50,13 +58,15 @@ public class CodigosVerificacion(AppDbContext db, IEnviadorCodigos enviador)
         if (recientes.Any(c => c.CreadoEn >= ahora.AddMinutes(-1))) return (ResultadoSolicitud.EsperarUnMinuto, null);
         if (recientes.Count >= MaxPorHora) return (ResultadoSolicitud.DemasiadosPorHora, null);
 
+        var codigo = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        // Primero se envía: si el SMS falla, no queda guardado un código que nadie recibió
+        // y los códigos anteriores siguen sirviendo. EnvioFallidoException sube al endpoint.
+        await enviador.EnviarAsync(telefono, codigo, ct);
+
         // Un código nuevo anula los anteriores sin usar.
         foreach (var c in recientes.Where(c => c.UsadoEn == null)) c.UsadoEn = ahora;
-
-        var codigo = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         db.CodigosVerificacion.Add(new CodigoVerificacion { Telefono = telefono, CodigoHash = Tokens.Hash(telefono + ":" + codigo), VenceEn = ahora.Add(Vigencia) });
         await db.SaveChangesAsync(ct);
-        await enviador.EnviarAsync(telefono, codigo, ct);
         return (ResultadoSolicitud.Enviado, codigo);
     }
 

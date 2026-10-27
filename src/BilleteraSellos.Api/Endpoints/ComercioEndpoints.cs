@@ -201,8 +201,8 @@ public static class ComercioEndpoints
     {
         var texto = q.Trim();
         var digitos = Codigos.SoloDigitos(texto);
-        // Teléfonos argentinos: se aceptan con o sin 54 / 9 adelante.
-        var tel = digitos.StartsWith("549") ? digitos[3..] : digitos.StartsWith("54") ? digitos[2..] : digitos;
+        // Teléfonos argentinos: se aceptan con o sin +54 9, 0 y 15 (misma normalización que el login por SMS).
+        var tel = CodigosVerificacion.Normalizar(texto);
         return await db.Clientes.FirstOrDefaultAsync(c =>
             c.CodigoQr == texto || (digitos.Length >= 6 && (c.Dni == digitos || c.Telefono == tel)));
     }

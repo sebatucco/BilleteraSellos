@@ -17,4 +17,5 @@ public class AppDbContext : DbContext
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<Sesion> Sesiones => Set<Sesion>();
     public DbSet<CodigoVerificacion> CodigosVerificacion => Set<CodigoVerificacion>();
+    public DbSet<TokenRestablecimiento> TokensRestablecimiento => Set<TokenRestablecimiento>();
 }

@@ -28,6 +28,25 @@ Content-Type: application/json
 GET {{api}}/auth/yo
 Authorization: Bearer {{tokenComercio}}
 
+### Cambiar mi contraseña (cierra mis otras sesiones)
+POST {{api}}/auth/contrasena
+Authorization: Bearer {{tokenComercio}}
+Content-Type: application/json
+
+{ "actual": "Demo1234", "nueva": "Nueva2026" }
+
+### Olvidé mi contraseña: en desarrollo el email con el link sale en la consola
+POST {{api}}/auth/comercios/olvide
+Content-Type: application/json
+
+{ "email": "cafe@demo.com" }
+
+### Crear la contraseña nueva con el token del link (lo que va después de #restablecer=)
+POST {{api}}/auth/comercios/restablecer
+Content-Type: application/json
+
+{ "token": "PEGAR_TOKEN_DEL_LINK", "nueva": "Nueva2026" }
+
 ########## Caja (cualquier usuario del comercio) ##########
 
 ### Buscar a Lucía por DNI

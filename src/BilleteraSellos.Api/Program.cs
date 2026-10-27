@@ -29,7 +29,7 @@ if (builder.Configuration.GetValue("Avisos:Activos", true))
 // Login: tokens de sesión guardados (hasheados) en la base, revocables al instante.
 builder.Services.AddScoped<Sesiones>();
 builder.Services.AddScoped<CodigosVerificacion>();
-builder.Services.AddSingleton<IEnviadorCodigos, EnviadorCodigosConsola>();
+builder.AgregarEnvios(); // SMS (Consola/Twilio) y email (Consola/SMTP) según appsettings
 builder.Services.AddAuthentication(SesionHandler.Esquema)
     .AddScheme<AuthenticationSchemeOptions, SesionHandler>(SesionHandler.Esquema, null);
 builder.Services.AddAuthorization(o =>
@@ -77,7 +77,7 @@ using (var scope = app.Services.CreateScope())
     if (app.Environment.IsDevelopment())
     {
         // Si la base de desarrollo es de una versión anterior (sin las tablas nuevas), se recrea con los datos de ejemplo.
-        try { await db.Usuarios.AnyAsync(); }
+        try { await db.Usuarios.AnyAsync(); await db.TokensRestablecimiento.AnyAsync(); }
         catch (Exception)
         {
             app.Logger.LogWarning("La base de desarrollo era de una versión anterior: se recrea con datos de ejemplo.");
@@ -97,6 +97,7 @@ if (app.Environment.IsDevelopment())
     app.MapPost("/api/avisos/procesar", (ProcesadorAvisos p) => p.ProcesarAsync()).WithTags("Desarrollo");
 }
 
+app.AvisarSiEnviosDeConsola();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors();
@@ -105,6 +106,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
+app.MapContrasenaEndpoints();
 app.MapComercioEndpoints();
 app.MapClienteEndpoints();
 
