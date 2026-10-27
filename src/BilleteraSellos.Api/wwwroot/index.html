@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billetera de Sellos</title>
+<style>
+:root{--bg:#EEF0F5;--surface:#fff;--sunk:#E3E6EE;--fg:#171A26;--muted:#5D6375;--line:#D3D7E2;--accent:#2C47D6;--accent-fg:#fff;--good:#1E8A57;--warn:#B86A00;--bad:#C23A3A}
+@media (prefers-color-scheme:dark){:root{--bg:#10121A;--surface:#1A1D29;--sunk:#232736;--fg:#ECEEF5;--muted:#9AA0B4;--line:#2E3345;--accent:#7E93FF;--accent-fg:#0D1020;--good:#4CC98A;--warn:#F0A643;--bad:#F07171;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px 16px 48px}
+.wrap{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1{font-size:24px;margin:0}h2{font-size:18px;margin:0}h3{font-size:16px;margin:0}p{margin:0}
+.muted{color:var(--muted)}.small{font-size:13px}
+button{font:inherit;font-weight:600;cursor:pointer;border:0;border-radius:10px;padding:10px 14px;background:var(--sunk);color:var(--fg)}
+button.primary{background:var(--accent);color:var(--accent-fg)}
+input,select{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);width:100%;min-width:0}
+.row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}.between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:10px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.mode{display:grid;grid-template-columns:1fr 1fr;background:var(--sunk);border-radius:12px;padding:4px;gap:4px}
+.mode button{background:transparent}.mode button[aria-pressed=true]{background:var(--surface)}
+.card{border-radius:18px;padding:16px;color:#fff;display:flex;flex-direction:column;gap:10px}
+.stamps{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.stamp{aspect-ratio:1;border-radius:50%;border:2px dashed rgba(255,255,255,.55);display:grid;place-items:center;font-size:12px}
+.stamp.on{background:#fff;border:2px solid #fff;color:var(--c);font-weight:800}
+.tier{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:99px;background:rgba(255,255,255,.22)}
+.card a{color:#fff}.card button{background:#fff;color:var(--c)}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.12em}
+.item{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}.item:first-child{border-top:0}
+.item .grow{flex:1;min-width:0}
+.pill{font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;white-space:nowrap}
+.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.msg{padding:10px 12px;border-radius:10px;background:var(--sunk)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Billetera de Sellos</h1>
+  <div class="mode"><button id="m-cli" aria-pressed="true">Cliente</button><button id="m-com" aria-pressed="false">Comercio</button></div>
+
+  <section id="v-cli" class="stack">
+    <div class="panel">
+      <h3>Entrar a mi billetera</h3>
+      <p class="small muted">Con DNI o teléfono. Probá con 30111222.</p>
+      <div class="row"><input id="cli-q" inputmode="numeric" placeholder="DNI o teléfono"><button class="primary" id="cli-entrar">Entrar</button></div>
+      <div id="cli-msg"></div>
+    </div>
+    <div id="billetera" class="stack"></div>
+  </section>
+
+  <section id="v-com" class="stack" hidden>
+    <select id="com-sel" aria-label="Comercio"></select>
+    <div class="panel" id="resumen"></div>
+    <div class="panel">
+      <h3>Sumar sello</h3>
+      <div class="row"><input id="com-q" placeholder="DNI, teléfono o código QR"><button class="primary" id="com-buscar">Buscar</button></div>
+      <div id="com-found"></div>
+    </div>
+    <div class="panel">
+      <h3>Entregar premio</h3>
+      <div class="row"><input id="com-codigo" placeholder="Código de canje"><button id="com-entregar">Entregar</button></div>
+      <div id="com-entrega"></div>
+    </div>
+    <div class="panel"><h3>Se están enfriando</h3><div id="riesgo"></div></div>
+    <div class="panel"><h3>Cumpleaños próximos 7 días</h3><div id="cumples"></div></div>
+    <div class="panel">
+      <h3>¿Cuánto me cuesta el premio?</h3>
+      <div class="grid2">
+        <label class="stack small muted" style="gap:4px">Ticket promedio ($)<input id="c-ticket" type="number" value="4500"></label>
+        <label class="stack small muted" style="gap:4px">Compras con sello / mes<input id="c-vol" type="number" value="600"></label>
+      </div>
+      <div id="costo" class="msg"></div>
+    </div>
+  </section>
+</div>
+<script>
+const api=async(url,opt={})=>{
+  const r=await fetch("/api"+url,{headers:{"Content-Type":"application/json"},...opt});
+  const body=r.status===204?null:await r.json().catch(()=>null);
+  if(!r.ok)throw new Error(body?.error||("Error "+r.status));
+  return body;
+};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=n=>"$"+Math.round(n).toLocaleString("es-AR");
+let clienteId=null, comercioId=null;
+
+function modo(m){$("#v-cli").hidden=m!=="cli";$("#v-com").hidden=m!=="com";$("#m-cli").setAttribute("aria-pressed",m==="cli");$("#m-com").setAttribute("aria-pressed",m==="com")}
+$("#m-cli").onclick=()=>{modo("cli");if(clienteId)cargarBilletera()};
+$("#m-com").onclick=()=>{modo("com");cargarComercio()};
+
+/* ---- Cliente ---- */
+$("#cli-entrar").onclick=async()=>{
+  try{
+    // La caja y la billetera usan la misma búsqueda; en producción esto sería login con código por SMS.
+    const c=await api(`/comercios/1/clientes/buscar?q=${encodeURIComponent($("#cli-q").value)}`);
+    clienteId=c.clienteId;$("#cli-msg").innerHTML="";cargarBilletera();
+  }catch(e){$("#cli-msg").innerHTML=`<p class="small bad">${esc(e.message)}</p>`}
+};
+async function cargarBilletera(){
+  const b=await api(`/clientes/${clienteId}/billetera`);
+  const todos=await api("/comercios");
+  const tiene=new Set(b.tarjetas.map(t=>t.comercioId));
+  $("#billetera").innerHTML=`<h2>Hola, ${esc(b.nombre.split(" ")[0])}</h2>`+b.tarjetas.map(t=>{
+    let st="";for(let i=0;i<t.sellosNecesarios;i++)st+=`<span class="stamp${i<t.sellosActuales?" on":""}">${i<t.sellosActuales?"✓":i+1}</span>`;
+    const pend=t.canjesPendientes.map(k=>`<div><p class="small">Código para la caja</p><p class="code">${k.codigo}</p><p class="small">${esc(k.premio)} · vence ${new Date(k.venceEn).toLocaleDateString("es-AR")}</p></div>`).join("");
+    return `<div class="card" style="background:${esc(t.color)};--c:${esc(t.color)}">
+      <div class="row between"><b style="font-size:18px">${esc(t.comercio)}</b><span class="tier">${t.nivel}</span></div>
+      <div class="stamps">${st}</div>
+      ${pend}
+      ${t.completa?`<button data-canjear="${t.tarjetaId}">Canjear: ${esc(t.premio)}</button>`:`<p class="small">Te faltan ${t.sellosNecesarios-t.sellosActuales} para: ${esc(t.premio)}</p>`}
+      ${t.resenaGoogleUrl?`<a class="small" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener">Dejar una reseña en Google</a>`:""}
+    </div>`}).join("")+
+    `<div class="panel"><h3>Comercios adheridos</h3>${todos.filter(c=>!tiene.has(c.id)).map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${esc(c.rubro)} · ${esc(c.premio)}</p></div><button data-sumar="${esc(c.codigo)}">Sumar</button></div>`).join("")||'<p class="small muted">Ya tenés todas las tarjetas.</p>'}</div>`;
+}
+document.addEventListener("click",async e=>{
+  const c=e.target.closest("[data-canjear]");
+  if(c){try{await api(`/clientes/${clienteId}/tarjetas/${c.dataset.canjear}/canjear`,{method:"POST"});cargarBilletera()}catch(x){alert(x.message)}}
+  const s=e.target.closest("[data-sumar]");
+  if(s){await api(`/clientes/${clienteId}/tarjetas`,{method:"POST",body:JSON.stringify({codigoComercio:s.dataset.sumar})});cargarBilletera()}
+  const a=e.target.closest("[data-sello]");
+  if(a){try{const r=await api(`/comercios/${comercioId}/sellos`,{method:"POST",body:JSON.stringify({clienteId:+a.dataset.sello,cargadoPor:"caja"})});
+    $("#com-found").innerHTML=`<p class="msg">${r.tarjetaCompleta?"¡Tarjeta completa! Ya puede canjear.":`Sello sumado: ${r.sellosActuales} de ${r.sellosNecesarios}.`}</p>`;cargarResumen()}
+    catch(x){$("#com-found").innerHTML=`<p class="small bad">${esc(x.message)}</p>`}}
+});
+
+/* ---- Comercio ---- */
+async function cargarComercio(){
+  if(!comercioId){
+    const cs=await api("/comercios");
+    $("#com-sel").innerHTML=cs.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
+    comercioId=+$("#com-sel").value;
+  }
+  cargarResumen();
+}
+$("#com-sel").onchange=e=>{comercioId=+e.target.value;$("#com-found").innerHTML="";cargarResumen()};
+async function cargarResumen(){
+  const r=await api(`/comercios/${comercioId}/resumen`);
+  $("#resumen").innerHTML=`<div class="grid2"><p><b style="font-size:22px">${r.clientes}</b><br><span class="small muted">clientes</span></p><p><b style="font-size:22px">${r.sellosUltimos30Dias}</b><br><span class="small muted">sellos en 30 días</span></p><p><b style="font-size:22px">${r.clientesEnRiesgo}</b><br><span class="small muted">en riesgo</span></p><p><b style="font-size:22px">${r.canjesPendientes}</b><br><span class="small muted">premios por entregar</span></p></div>`;
+  const rs=await api(`/comercios/${comercioId}/clientes-en-riesgo`);
+  $("#riesgo").innerHTML=rs.map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${c.diasSinVenir} días sin venir · venía cada ${c.cadaCuantosDias}</p></div><span class="pill ${c.estado==="Critico"?"bad":"warn"}">${c.estado==="Critico"?"Crítico":"En riesgo"}</span></div>`).join("")||'<p class="small muted">Nadie se está enfriando.</p>';
+  const cb=await api(`/comercios/${comercioId}/cumpleanos?dias=7`);
+  $("#cumples").innerHTML=cb.map(c=>`<div class="item"><div class="grow">${esc(c.nombre)}</div><span class="small muted">${c.enDias===0?"hoy":"en "+c.enDias+" días"}</span></div>`).join("")||'<p class="small muted">Nadie cumple años esta semana.</p>';
+  calcular();
+}
+$("#com-buscar").onclick=async()=>{
+  try{const c=await api(`/comercios/${comercioId}/clientes/buscar?q=${encodeURIComponent($("#com-q").value)}`);
+    $("#com-found").innerHTML=`<div class="msg stack"><div class="row between"><b>${esc(c.nombre)}</b><span class="pill">${c.nivel}</span></div><p class="small muted">${c.tieneTarjeta?`${c.sellosActuales} de ${c.sellosNecesarios} sellos`:"Todavía no tiene tu tarjeta: se crea con este sello"}</p><button class="primary" data-sello="${c.clienteId}">Sumar 1 sello</button></div>`}
+  catch(e){$("#com-found").innerHTML=`<p class="small bad">${esc(e.message)}</p>`}
+};
+$("#com-entregar").onclick=async()=>{
+  try{const r=await api(`/comercios/${comercioId}/canjes/${encodeURIComponent($("#com-codigo").value.trim())}/entregar`,{method:"POST"});
+    $("#com-entrega").innerHTML=`<p class="msg good">Entregá: ${esc(r.premio)} a ${esc(r.cliente)}.</p>`;cargarResumen()}
+  catch(e){$("#com-entrega").innerHTML=`<p class="small bad">${esc(e.message)}</p>`}
+};
+async function calcular(){
+  try{const c=await api(`/comercios/${comercioId}/costo-premio?ticketPromedio=${+$("#c-ticket").value||0}&comprasConSelloPorMes=${+$("#c-vol").value||0}`);
+    const tono=c.semaforo==="Sano"?"good":c.semaforo==="Revisalo"?"warn":"bad";
+    $("#costo").innerHTML=`<p class="small muted">Te cuesta por mes</p><p style="font-size:26px;font-weight:800">${fmt(c.costoMensual)} <span class="pill ${tono}">${c.semaforo}</span></p><p class="small muted">≈ ${c.premiosPorMes} premios · ${c.porcentajeDeVentas}% de esas ventas · ${fmt(c.costoPorCompra)} por compra</p>`}
+  catch(e){$("#costo").textContent=e.message}
+}
+$("#c-ticket").oninput=calcular;$("#c-vol").oninput=calcular;
+</script>
+</body>
+</html>

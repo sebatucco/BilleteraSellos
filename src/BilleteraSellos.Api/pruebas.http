@@ -1,0 +1,47 @@
+### Pruebas rápidas. En Visual Studio o VS Code (extensión REST Client) se ejecutan con "Send Request".
+@api = http://localhost:5225/api
+
+### Comercios adheridos
+GET {{api}}/comercios
+
+### Buscar a Lucía en la caja del café por DNI
+GET {{api}}/comercios/1/clientes/buscar?q=30111222
+
+### Sumar un sello a Lucía en la panadería
+POST {{api}}/comercios/3/sellos
+Content-Type: application/json
+
+{ "clienteId": 1, "cargadoPor": "caja 1" }
+
+### Billetera de Lucía
+GET {{api}}/clientes/1/billetera
+
+### Registrar un cliente nuevo
+POST {{api}}/clientes
+Content-Type: application/json
+
+{ "nombre": "Ana Torres", "dni": "35123456", "telefono": "1166667777", "fechaNacimiento": "1990-05-02" }
+
+### Sumar la tarjeta de un comercio escaneando su QR
+POST {{api}}/clientes/5/tarjetas
+Content-Type: application/json
+
+{ "codigoComercio": "dona-rosa" }
+
+### Clientes que se enfrían en el café
+GET {{api}}/comercios/1/clientes-en-riesgo
+
+### Costo del premio del café
+GET {{api}}/comercios/1/costo-premio?ticketPromedio=4500&comprasConSelloPorMes=600
+
+### Cumpleaños de los próximos 7 días
+GET {{api}}/comercios/1/cumpleanos?dias=7
+
+### Cambiar las reglas de la barbería
+PUT {{api}}/comercios/2/programa
+Content-Type: application/json
+
+{ "sellosNecesarios": 6, "premio": "Corte gratis", "costoPremio": 6000, "diasParaRetirar": 7, "horasEntreSellos": 0 }
+
+### Procesar avisos ahora (solo en desarrollo)
+POST {{api}}/avisos/procesar
