@@ -1,47 +1,130 @@
 ### Pruebas rápidas. En Visual Studio o VS Code (extensión REST Client) se ejecutan con "Send Request".
+### Primero ejecutá un login y copiá el "token" de la respuesta en la variable que corresponde.
 @api = http://localhost:5225/api
+@tokenComercio = PEGAR_TOKEN_DEL_LOGIN_DE_COMERCIO
+@tokenCliente = PEGAR_TOKEN_DEL_CLIENTE
 
-### Comercios adheridos
-GET {{api}}/comercios
+########## Login de comercio ##########
 
-### Buscar a Lucía en la caja del café por DNI
+### Dueña del café (contraseña de todos los usuarios demo: Demo1234)
+POST {{api}}/auth/comercios/login
+Content-Type: application/json
+
+{ "email": "cafe@demo.com", "contrasena": "Demo1234" }
+
+### Cajero del café
+POST {{api}}/auth/comercios/login
+Content-Type: application/json
+
+{ "email": "caja@cafe.demo", "contrasena": "Demo1234" }
+
+### Registrar un comercio nuevo (devuelve el token del dueño)
+POST {{api}}/auth/comercios/registro
+Content-Type: application/json
+
+{ "nombreComercio": "Heladería Polo", "rubro": "Heladería", "direccion": "Mitre 100", "nombreDueno": "Leo", "email": "leo@polo.com", "contrasena": "Polo2026" }
+
+### Quién soy
+GET {{api}}/auth/yo
+Authorization: Bearer {{tokenComercio}}
+
+########## Caja (cualquier usuario del comercio) ##########
+
+### Buscar a Lucía por DNI
 GET {{api}}/comercios/1/clientes/buscar?q=30111222
+Authorization: Bearer {{tokenComercio}}
 
-### Sumar un sello a Lucía en la panadería
-POST {{api}}/comercios/3/sellos
+### Sumar un sello
+POST {{api}}/comercios/1/sellos
+Authorization: Bearer {{tokenComercio}}
 Content-Type: application/json
 
-{ "clienteId": 1, "cargadoPor": "caja 1" }
+{ "clienteId": 1 }
 
-### Billetera de Lucía
-GET {{api}}/clientes/1/billetera
+### Dar de alta a un cliente que no tiene la app
+POST {{api}}/comercios/1/clientes
+Authorization: Bearer {{tokenComercio}}
+Content-Type: application/json
 
-### Registrar un cliente nuevo
+{ "nombre": "Pedro Sosa", "dni": "40111222", "telefono": "1170001111" }
+
+### Resumen, clientes en riesgo, cumpleaños y costo
+GET {{api}}/comercios/1/resumen
+Authorization: Bearer {{tokenComercio}}
+
+###
+GET {{api}}/comercios/1/clientes-en-riesgo
+Authorization: Bearer {{tokenComercio}}
+
+###
+GET {{api}}/comercios/1/cumpleanos?dias=7
+Authorization: Bearer {{tokenComercio}}
+
+###
+GET {{api}}/comercios/1/costo-premio?ticketPromedio=4500&comprasConSelloPorMes=600
+Authorization: Bearer {{tokenComercio}}
+
+### Otro comercio: tiene que dar 403
+GET {{api}}/comercios/2/resumen
+Authorization: Bearer {{tokenComercio}}
+
+########## Solo el dueño ##########
+
+### Cambiar las reglas de la tarjeta
+PUT {{api}}/comercios/1/programa
+Authorization: Bearer {{tokenComercio}}
+Content-Type: application/json
+
+{ "sellosNecesarios": 10, "premio": "Café con medialuna gratis", "costoPremio": 900, "diasParaRetirar": 7, "horasEntreSellos": 1 }
+
+### Ver el equipo
+GET {{api}}/comercios/1/usuarios
+Authorization: Bearer {{tokenComercio}}
+
+### Agregar un cajero
+POST {{api}}/comercios/1/usuarios
+Authorization: Bearer {{tokenComercio}}
+Content-Type: application/json
+
+{ "nombre": "Pepe", "email": "pepe@cafe.demo", "contrasena": "Pepe2026" }
+
+########## Cliente ##########
+
+### Paso 1: pedir el código (en desarrollo viene en "codigoDesarrollo" y en la consola)
+POST {{api}}/auth/clientes/codigo
+Content-Type: application/json
+
+{ "telefono": "1154873320" }
+
+### Paso 2: verificar. Si "requiereRegistro" es true, el token sirve para POST /clientes
+POST {{api}}/auth/clientes/verificar
+Content-Type: application/json
+
+{ "telefono": "1154873320", "codigo": "PEGAR_CODIGO" }
+
+### Registro (solo con el token de registro del paso 2)
 POST {{api}}/clientes
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
-{ "nombre": "Ana Torres", "dni": "35123456", "telefono": "1166667777", "fechaNacimiento": "1990-05-02" }
+{ "nombre": "Ana Torres", "dni": "35123456", "fechaNacimiento": "1990-05-02" }
+
+### Mi billetera
+GET {{api}}/billetera
+Authorization: Bearer {{tokenCliente}}
 
 ### Sumar la tarjeta de un comercio escaneando su QR
-POST {{api}}/clientes/5/tarjetas
+POST {{api}}/billetera/tarjetas
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
 { "codigoComercio": "dona-rosa" }
 
-### Clientes que se enfrían en el café
-GET {{api}}/comercios/1/clientes-en-riesgo
+### Salir (sirve para cualquier token)
+POST {{api}}/auth/salir
+Authorization: Bearer {{tokenCliente}}
 
-### Costo del premio del café
-GET {{api}}/comercios/1/costo-premio?ticketPromedio=4500&comprasConSelloPorMes=600
+########## Desarrollo ##########
 
-### Cumpleaños de los próximos 7 días
-GET {{api}}/comercios/1/cumpleanos?dias=7
-
-### Cambiar las reglas de la barbería
-PUT {{api}}/comercios/2/programa
-Content-Type: application/json
-
-{ "sellosNecesarios": 6, "premio": "Corte gratis", "costoPremio": 6000, "diasParaRetirar": 7, "horasEntreSellos": 0 }
-
-### Procesar avisos ahora (solo en desarrollo)
+### Procesar avisos ahora
 POST {{api}}/avisos/procesar

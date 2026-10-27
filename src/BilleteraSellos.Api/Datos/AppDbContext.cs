@@ -14,4 +14,7 @@ public class AppDbContext : DbContext
     public DbSet<Movimiento> Movimientos => Set<Movimiento>();
     public DbSet<Canje> Canjes => Set<Canje>();
     public DbSet<Aviso> Avisos => Set<Aviso>();
+    public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<Sesion> Sesiones => Set<Sesion>();
+    public DbSet<CodigoVerificacion> CodigosVerificacion => Set<CodigoVerificacion>();
 }

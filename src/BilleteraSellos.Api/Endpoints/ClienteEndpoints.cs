@@ -1,12 +1,15 @@
+using System.Security.Claims;
 using BilleteraSellos.Api.Datos;
 using BilleteraSellos.Api.Dominio;
+using BilleteraSellos.Api.Seguridad;
 using BilleteraSellos.Api.Servicios;
 using Microsoft.EntityFrameworkCore;
 
 namespace BilleteraSellos.Api.Endpoints;
 
-public record RegistroPedido(string Nombre, string Dni, string Telefono, DateOnly? FechaNacimiento);
-public record ClienteRegistrado(int Id, string Nombre, string CodigoQr);
+/// <summary>Registro desde la billetera: el teléfono sale del código ya verificado, no del pedido.</summary>
+public record RegistroPedido(string Nombre, string Dni, DateOnly? FechaNacimiento);
+public record ClienteRegistrado(int Id, string Nombre, string Token, DateTime VenceEn);
 public record CanjePendiente(string Codigo, string Premio, DateTime VenceEn);
 public record TarjetaEnBilletera(
     int TarjetaId, int ComercioId, string Comercio, string Rubro, string Direccion, string Color,
@@ -21,28 +24,30 @@ public static class ClienteEndpoints
 {
     public static void MapClienteEndpoints(this IEndpointRouteBuilder app)
     {
-        var g = app.MapGroup("/api/clientes").WithTags("Cliente");
-
-        // Registro único: con esto el cliente usa todas las tarjetas de todos los comercios.
-        g.MapPost("/", async (RegistroPedido p, AppDbContext db, RelojLocal reloj) =>
+        // Paso final del alta: requiere el token que da /api/auth/clientes/verificar a un teléfono sin cuenta.
+        app.MapPost("/api/clientes", async (RegistroPedido p, ClaimsPrincipal yo, AppDbContext db, RelojLocal reloj, Sesiones sesiones) =>
         {
+            var tel = yo.FindFirstValue(Reclamos.Telefono) ?? "";
+            if (Validar(p.Nombre, p.Dni, tel, p.FechaNacimiento, reloj.Hoy) is { } error) return Results.BadRequest(new { error });
             var dni = Codigos.SoloDigitos(p.Dni);
-            var tel = Codigos.SoloDigitos(p.Telefono);
-            if (string.IsNullOrWhiteSpace(p.Nombre)) return Results.BadRequest(new { error = "Falta el nombre." });
-            if (dni.Length is < 7 or > 9) return Results.BadRequest(new { error = "El DNI tiene que tener entre 7 y 9 números." });
-            if (tel.Length < 8) return Results.BadRequest(new { error = "El teléfono tiene que tener al menos 8 números, con código de área." });
-            if (p.FechaNacimiento is { } f && (f > reloj.Hoy || f.Year < 1900)) return Results.BadRequest(new { error = "La fecha de nacimiento no es válida." });
             if (await db.Clientes.AnyAsync(c => c.Dni == dni || c.Telefono == tel))
                 return Results.Conflict(new { error = "Ya hay una cuenta con ese DNI o teléfono." });
 
             var c = new Cliente { Nombre = p.Nombre.Trim(), Dni = dni, Telefono = tel, FechaNacimiento = p.FechaNacimiento };
             db.Clientes.Add(c);
             await db.SaveChangesAsync();
-            return Results.Created($"/api/clientes/{c.Id}/billetera", new ClienteRegistrado(c.Id, c.Nombre, c.CodigoQr));
-        });
 
-        g.MapGet("/{clienteId:int}/billetera", async (int clienteId, AppDbContext db) =>
+            if (yo.Entero(Reclamos.SesionId) is { } registro) await sesiones.CerrarAsync(registro);
+            var (token, vence) = await sesiones.AbrirAsync(TipoSesion.Cliente, clienteId: c.Id);
+            return Results.Created("/api/billetera", new ClienteRegistrado(c.Id, c.Nombre, token, vence));
+        }).WithTags("Cliente").RequireAuthorization(Politicas.Registro).RequireRateLimiting("auth");
+
+        // La billetera siempre es la del cliente logueado: no hay id en la URL que se pueda cambiar.
+        var g = app.MapGroup("/api/billetera").WithTags("Cliente").RequireAuthorization(Politicas.Cliente);
+
+        g.MapGet("/", async (ClaimsPrincipal yo, AppDbContext db) =>
         {
+            var clienteId = yo.Entero(Reclamos.ClienteId)!.Value;
             var c = await db.Clientes.FirstOrDefaultAsync(x => x.Id == clienteId);
             if (c is null) return Results.NotFound();
             var ahora = DateTime.UtcNow;
@@ -72,10 +77,10 @@ public static class ClienteEndpoints
         });
 
         // El cliente escanea el QR del mostrador y la tarjeta de ese comercio aparece en su billetera.
-        g.MapPost("/{clienteId:int}/tarjetas", async (int clienteId, SumarTarjetaPedido p, AppDbContext db) =>
+        g.MapPost("/tarjetas", async (SumarTarjetaPedido p, ClaimsPrincipal yo, AppDbContext db) =>
         {
-            if (!await db.Clientes.AnyAsync(c => c.Id == clienteId)) return Results.NotFound(new { error = "El cliente no existe." });
-            var comercio = await db.Comercios.FirstOrDefaultAsync(c => c.Codigo == p.CodigoComercio.Trim().ToLowerInvariant());
+            var clienteId = yo.Entero(Reclamos.ClienteId)!.Value;
+            var comercio = await db.Comercios.FirstOrDefaultAsync(c => c.Codigo == (p.CodigoComercio ?? "").Trim().ToLowerInvariant());
             if (comercio is null) return Results.NotFound(new { error = "No encontramos ese comercio. Revisá el código del QR." });
 
             var existente = await db.Tarjetas.FirstOrDefaultAsync(t => t.ClienteId == clienteId && t.ComercioId == comercio.Id);
@@ -84,15 +89,16 @@ public static class ClienteEndpoints
             var t = new Tarjeta { ClienteId = clienteId, ComercioId = comercio.Id };
             db.Tarjetas.Add(t);
             await db.SaveChangesAsync();
-            return Results.Created($"/api/clientes/{clienteId}/billetera", new { tarjetaId = t.Id, yaLaTenias = false });
+            return Results.Created("/api/billetera", new { tarjetaId = t.Id, yaLaTenias = false });
         });
 
         // Canjear el premio de una tarjeta completa: descuenta los sellos y genera el código para la caja.
-        g.MapPost("/{clienteId:int}/tarjetas/{tarjetaId:int}/canjear", async (int clienteId, int tarjetaId, AppDbContext db) =>
+        g.MapPost("/tarjetas/{tarjetaId:int}/canjear", async (int tarjetaId, ClaimsPrincipal yo, AppDbContext db) =>
         {
+            var clienteId = yo.Entero(Reclamos.ClienteId)!.Value;
             var t = await db.Tarjetas.Include(x => x.Comercio).ThenInclude(co => co!.Programa)
                 .FirstOrDefaultAsync(x => x.Id == tarjetaId && x.ClienteId == clienteId);
-            if (t is null) return Results.NotFound();
+            if (t is null) return Results.NotFound(new { error = "Esa tarjeta no está en tu billetera." });
             var p = t.Comercio!.Programa!;
             if (t.SellosActuales < p.SellosNecesarios)
                 return Results.Conflict(new { error = $"Todavía te faltan {p.SellosNecesarios - t.SellosActuales} sellos." });
@@ -109,13 +115,25 @@ public static class ClienteEndpoints
         });
 
         // El cliente decide, comercio por comercio, si quiere recibir promos.
-        g.MapPut("/{clienteId:int}/tarjetas/{tarjetaId:int}/promos", async (int clienteId, int tarjetaId, PromosPedido p, AppDbContext db) =>
+        g.MapPut("/tarjetas/{tarjetaId:int}/promos", async (int tarjetaId, PromosPedido p, ClaimsPrincipal yo, AppDbContext db) =>
         {
+            var clienteId = yo.Entero(Reclamos.ClienteId)!.Value;
             var t = await db.Tarjetas.FirstOrDefaultAsync(x => x.Id == tarjetaId && x.ClienteId == clienteId);
-            if (t is null) return Results.NotFound();
+            if (t is null) return Results.NotFound(new { error = "Esa tarjeta no está en tu billetera." });
             t.AceptaPromos = p.Acepta;
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
+    }
+
+    /// <summary>Valida los datos de un cliente. Devuelve el motivo del error, o null si están bien.</summary>
+    internal static string? Validar(string? nombre, string? dni, string telefono, DateOnly? nacimiento, DateOnly hoy)
+    {
+        var d = Codigos.SoloDigitos(dni ?? "");
+        if (string.IsNullOrWhiteSpace(nombre)) return "Falta el nombre.";
+        if (d.Length is < 7 or > 9) return "El DNI tiene que tener entre 7 y 9 números.";
+        if (telefono.Length is < 8 or > 13) return "El teléfono tiene que tener entre 8 y 13 números, con código de área.";
+        if (nacimiento is { } f && (f > hoy || f.Year < 1900)) return "La fecha de nacimiento no es válida.";
+        return null;
     }
 }

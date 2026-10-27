@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using BilleteraSellos.Api.Datos;
 using BilleteraSellos.Api.Dominio;
+using BilleteraSellos.Api.Seguridad;
 using BilleteraSellos.Api.Servicios;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +10,8 @@ namespace BilleteraSellos.Api.Endpoints;
 public record ComercioResumido(int Id, string Nombre, string Rubro, string Direccion, string Codigo, string Color, string? Premio, int? SellosNecesarios);
 public record Resumen(int Clientes, int SellosUltimos30Dias, int ClientesEnRiesgo, int CanjesPendientes);
 public record ClienteEnCaja(int ClienteId, string Nombre, bool TieneTarjeta, int SellosActuales, int SellosNecesarios, Nivel Nivel, bool PremioDisponible);
-public record SumarSelloPedido(int ClienteId, string? CargadoPor);
+public record SumarSelloPedido(int ClienteId);
+public record AltaEnCajaPedido(string Nombre, string Dni, string Telefono, DateOnly? FechaNacimiento);
 public record SelloSumado(int TarjetaId, int SellosActuales, int SellosNecesarios, bool TarjetaCompleta, Nivel Nivel, bool TarjetaNueva);
 public record ClienteEnfriandose(int ClienteId, string Nombre, string Telefono, int DiasSinVenir, double? CadaCuantosDias, EstadoCliente Estado, bool AceptaPromos);
 public record Cumpleanero(int ClienteId, string Nombre, DateOnly Fecha, int EnDias);
@@ -28,7 +31,10 @@ public static class ComercioEndpoints
                     c.Programa != null ? c.Programa.Premio : null, c.Programa != null ? c.Programa.SellosNecesarios : null))
                 .ToListAsync());
 
-        g.MapGet("/{comercioId:int}/resumen", async (int comercioId, AppDbContext db) =>
+        // Todo lo demás es del panel: hace falta iniciar sesión y cada usuario solo opera sobre su comercio.
+        var priv = g.MapGroup("").RequireAuthorization(Politicas.Comercio).AddEndpointFilter<SoloSuComercio>();
+
+        priv.MapGet("/{comercioId:int}/resumen", async (int comercioId, AppDbContext db) =>
         {
             if (!await db.Comercios.AnyAsync(c => c.Id == comercioId)) return Results.NotFound();
             var desde = DateTime.UtcNow.AddDays(-30);
@@ -43,7 +49,7 @@ public static class ComercioEndpoints
         });
 
         // Buscar en la caja por DNI, teléfono o el código del QR de la billetera.
-        g.MapGet("/{comercioId:int}/clientes/buscar", async (int comercioId, string q, AppDbContext db) =>
+        priv.MapGet("/{comercioId:int}/clientes/buscar", async (int comercioId, string q, AppDbContext db) =>
         {
             var programa = await db.Programas.FirstOrDefaultAsync(p => p.ComercioId == comercioId);
             if (programa is null) return Results.NotFound(new { error = "El comercio no existe o no tiene tarjeta configurada." });
@@ -56,7 +62,25 @@ public static class ComercioEndpoints
                 programa.SellosNecesarios, Niveles.Calcular(t?.SellosTotales ?? 0), t is not null && t.SellosActuales >= programa.SellosNecesarios));
         });
 
-        g.MapPost("/{comercioId:int}/sellos", async (int comercioId, SumarSelloPedido pedido, AppDbContext db, INotificador notificador) =>
+        // Alta en la caja para quien no tiene la app (como rewa: alcanza con el DNI).
+        // Cuando después entre con su teléfono por SMS, encuentra esta misma cuenta con sus sellos.
+        priv.MapPost("/{comercioId:int}/clientes", async (int comercioId, AltaEnCajaPedido p, AppDbContext db, RelojLocal reloj) =>
+        {
+            var tel = CodigosVerificacion.Normalizar(p.Telefono ?? "");
+            if (ClienteEndpoints.Validar(p.Nombre, p.Dni, tel, p.FechaNacimiento, reloj.Hoy) is { } error) return Results.BadRequest(new { error });
+            var dni = Codigos.SoloDigitos(p.Dni);
+            if (await db.Clientes.AnyAsync(c => c.Dni == dni || c.Telefono == tel))
+                return Results.Conflict(new { error = "Ya hay un cliente con ese DNI o teléfono. Buscalo y sumale el sello." });
+
+            var c = new Cliente { Nombre = p.Nombre.Trim(), Dni = dni, Telefono = tel, FechaNacimiento = p.FechaNacimiento };
+            db.Clientes.Add(c);
+            await db.SaveChangesAsync();
+            var programa = await db.Programas.FirstOrDefaultAsync(x => x.ComercioId == comercioId);
+            return Results.Created($"/api/comercios/{comercioId}/clientes/buscar?q={dni}",
+                new ClienteEnCaja(c.Id, c.Nombre, false, 0, programa?.SellosNecesarios ?? 0, Nivel.Bronce, false));
+        });
+
+        priv.MapPost("/{comercioId:int}/sellos", async (int comercioId, SumarSelloPedido pedido, ClaimsPrincipal usuario, AppDbContext db, INotificador notificador) =>
         {
             var comercio = await db.Comercios.Include(c => c.Programa).FirstOrDefaultAsync(c => c.Id == comercioId);
             if (comercio?.Programa is not { } programa) return Results.NotFound(new { error = "El comercio no existe o no tiene tarjeta configurada." });
@@ -79,7 +103,7 @@ public static class ComercioEndpoints
             tarjeta.SellosActuales++;
             tarjeta.SellosTotales++;
             tarjeta.UltimoSello = DateTime.UtcNow;
-            tarjeta.Movimientos.Add(new Movimiento { Tipo = TipoMovimiento.Sello, CargadoPor = pedido.CargadoPor });
+            tarjeta.Movimientos.Add(new Movimiento { Tipo = TipoMovimiento.Sello, CargadoPor = usuario.Identity?.Name });
 
             var completa = tarjeta.SellosActuales >= programa.SellosNecesarios;
             if (completa)
@@ -94,7 +118,7 @@ public static class ComercioEndpoints
         });
 
         // El cliente muestra su código de canje y la caja lo marca como entregado.
-        g.MapPost("/{comercioId:int}/canjes/{codigo}/entregar", async (int comercioId, string codigo, AppDbContext db) =>
+        priv.MapPost("/{comercioId:int}/canjes/{codigo}/entregar", async (int comercioId, string codigo, ClaimsPrincipal usuario, AppDbContext db) =>
         {
             var canje = await db.Canjes.Include(c => c.Tarjeta).ThenInclude(t => t!.Cliente)
                 .FirstOrDefaultAsync(c => c.Codigo == codigo.Trim().ToUpperInvariant());
@@ -103,12 +127,13 @@ public static class ComercioEndpoints
             if (canje.VenceEn < DateTime.UtcNow) return Results.Conflict(new { error = $"El código venció el {canje.VenceEn:dd/MM}." });
 
             canje.EntregadoEn = DateTime.UtcNow;
+            canje.EntregadoPor = usuario.Identity?.Name;
             await db.SaveChangesAsync();
             return Results.Ok(new CanjeEntregado(canje.Codigo, canje.Premio, canje.Tarjeta.Cliente!.Nombre));
         });
 
         // Clientes que vienen menos que su ritmo habitual, los más urgentes primero.
-        g.MapGet("/{comercioId:int}/clientes-en-riesgo", async (int comercioId, AppDbContext db) =>
+        priv.MapGet("/{comercioId:int}/clientes-en-riesgo", async (int comercioId, AppDbContext db) =>
         {
             var ahora = DateTime.UtcNow;
             var tarjetas = await db.Tarjetas.Include(t => t.Cliente).Include(t => t.Movimientos)
@@ -122,7 +147,7 @@ public static class ComercioEndpoints
         });
 
         // Cuánto cuesta la tarjeta por mes. Sin sellos/costo usa los del programa actual.
-        g.MapGet("/{comercioId:int}/costo-premio", async (int comercioId, decimal ticketPromedio, int comprasConSelloPorMes,
+        priv.MapGet("/{comercioId:int}/costo-premio", async (int comercioId, decimal ticketPromedio, int comprasConSelloPorMes,
             int? sellosNecesarios, decimal? costoPremio, AppDbContext db) =>
         {
             var p = await db.Programas.FirstOrDefaultAsync(x => x.ComercioId == comercioId);
@@ -132,7 +157,7 @@ public static class ComercioEndpoints
             return Results.Ok(CalculadoraCosto.Calcular(sellos, costoPremio ?? p!.CostoPremio, ticketPromedio, comprasConSelloPorMes));
         });
 
-        g.MapGet("/{comercioId:int}/cumpleanos", async (int comercioId, int? dias, AppDbContext db, RelojLocal reloj) =>
+        priv.MapGet("/{comercioId:int}/cumpleanos", async (int comercioId, int? dias, AppDbContext db, RelojLocal reloj) =>
         {
             var hoy = reloj.Hoy;
             var rango = Math.Clamp(dias ?? 7, 0, 60);
@@ -147,7 +172,13 @@ public static class ComercioEndpoints
                 .ToList();
         });
 
-        g.MapPut("/{comercioId:int}/programa", async (int comercioId, ProgramaPedido pedido, AppDbContext db) =>
+        priv.MapGet("/{comercioId:int}/programa", async (int comercioId, AppDbContext db) =>
+            await db.Programas.FirstOrDefaultAsync(x => x.ComercioId == comercioId) is { } p
+                ? Results.Ok(new ProgramaPedido(p.SellosNecesarios, p.Premio, p.CostoPremio, p.DiasParaRetirar, p.HorasEntreSellos))
+                : Results.NotFound());
+
+        // Cambiar las reglas de la tarjeta: solo el dueño.
+        priv.MapPut("/{comercioId:int}/programa", async (int comercioId, ProgramaPedido pedido, AppDbContext db) =>
         {
             if (pedido.SellosNecesarios is < 3 or > 30) return Results.BadRequest(new { error = "La tarjeta tiene que pedir entre 3 y 30 sellos." });
             if (string.IsNullOrWhiteSpace(pedido.Premio)) return Results.BadRequest(new { error = "Escribí cuál es el premio." });
@@ -160,7 +191,7 @@ public static class ComercioEndpoints
             p.HorasEntreSellos = Math.Clamp(pedido.HorasEntreSellos, 0, 72);
             await db.SaveChangesAsync();
             return Results.Ok(new ProgramaPedido(p.SellosNecesarios, p.Premio, p.CostoPremio, p.DiasParaRetirar, p.HorasEntreSellos));
-        });
+        }).RequireAuthorization(Politicas.Dueno);
     }
 
     internal static List<DateTime> Visitas(Tarjeta t) =>

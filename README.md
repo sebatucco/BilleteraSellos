@@ -37,17 +37,41 @@ En Visual Studio: abrí `BilleteraSellos.sln` y apretá F5.
 
 ### Para probar
 
-- **Cliente:** entrá con el DNI `30111222` (Lucía). Tiene tarjetas en 3 comercios.
-- **Comercio:** elegí "Barbería Norte", buscá `30111222` y sumá un sello. Le falta 1 para completar. Después, en modo Cliente, canjeá el premio y copiá el código; en modo Comercio, entregalo.
-- **Avisos automáticos:** en Swagger ejecutá `POST /api/avisos/procesar`. En la consola vas a ver el saludo de cumpleaños y los "te extrañamos".
+Usuarios de ejemplo del panel (contraseña de todos: `Demo1234`):
 
-Para empezar de cero con los datos de ejemplo, borrá `billetera.db` y volvé a correr.
+| Email | Comercio | Rol |
+|---|---|---|
+| cafe@demo.com | Café Tostado | Dueña |
+| caja@cafe.demo | Café Tostado | Cajero |
+| barberia@demo.com | Barbería Norte | Dueño |
+| panaderia@demo.com | Panadería La Espiga | Dueña |
+| verduleria@demo.com | Verdulería Doña Rosa | Dueña |
+
+- **Cliente:** entrá con el celular `1154873320` (Lucía, ya tiene tarjetas en 3 comercios). En desarrollo el código de verificación aparece en la misma pantalla y en la consola. Con cualquier otro número creás una cuenta nueva.
+- **Comercio:** ingresá como `barberia@demo.com`, buscá el DNI `30111222` y sumá un sello: con eso Lucía completa la tarjeta. En modo Cliente canjeá el premio y copiá el código; en modo Comercio, entregalo.
+- **Roles:** con `caja@cafe.demo` no aparecen las reglas de la tarjeta ni el equipo; con `cafe@demo.com` sí.
+- **Avisos automáticos:** en Swagger ejecutá `POST /api/avisos/procesar`. En la consola vas a ver el saludo de cumpleaños y los "te extrañamos".
+- **Swagger con login:** hacé login, copiá el `token` y pegalo en el botón **Authorize**.
+
+Para empezar de cero con los datos de ejemplo, borrá `billetera.db` y volvé a correr. Si la base es de una versión anterior, en desarrollo se recrea sola.
+
+## Cómo funciona el login
+
+- **Comercios:** email y contraseña. Dos roles: **dueño** (todo, incluido cambiar las reglas y manejar el equipo) y **cajero** (sumar sellos, dar de alta clientes y entregar premios).
+- **Clientes:** sin contraseña. Ponen su celular, reciben un código de 6 números por SMS y entran. Si es la primera vez, completan nombre, DNI y fecha de nacimiento.
+- **Alta en la caja:** si alguien no tiene la app, el cajero lo registra con DNI y celular. Cuando después entre con ese celular, encuentra sus sellos.
+- **Tokens:** cada login devuelve un token que se manda en `Authorization: Bearer <token>`. En la base solo se guarda su hash. Se cierra con `POST /api/auth/salir`, y desactivar un cajero corta su acceso al instante.
+- **Protecciones:** contraseñas con PBKDF2-SHA256, bloqueo de 15 minutos tras 5 contraseñas incorrectas, códigos SMS que vencen a los 10 minutos con 5 intentos, máximo 5 códigos por hora por teléfono y 20 pedidos de login por minuto por IP. Cada comercio solo puede ver y tocar sus propios datos.
 
 ## 3. Cómo está armado
 
 ```
 src/BilleteraSellos.Api/
   Dominio/Entidades.cs        Comercio, ProgramaSellos, Cliente, Tarjeta, Movimiento, Canje, Aviso
+  Dominio/Seguridad.cs        Usuario (dueño/cajero), Sesion, CodigoVerificacion
+  Seguridad/Autenticacion.cs  Contraseñas, tokens, sesiones y permisos por comercio
+  Seguridad/CodigosSms.cs     Códigos de verificación (hoy: consola; después SMS)
+  Endpoints/AuthEndpoints.cs  Login, registro de comercios, equipo
   Datos/AppDbContext.cs       Acceso a la base (EF Core)
   Datos/DatosDemo.cs          Datos de ejemplo (solo en Development)
   Servicios/Reglas.cs         Niveles, clientes que se enfrían, calculadora de costo, códigos
@@ -62,19 +86,20 @@ src/BilleteraSellos.Api/
 
 | Regla | Dónde |
 |---|---|
-| Un cliente se registra una vez y usa todos los comercios | `POST /api/clientes` |
+| Un cliente se registra una vez y usa todos los comercios | `POST /api/auth/clientes/codigo` → `verificar` → `POST /api/clientes` |
+| El cajero da de alta a quien no tiene la app | `POST /api/comercios/{id}/clientes` |
 | Buscar en la caja por DNI, teléfono (con o sin +54 9) o QR | `GET /api/comercios/{id}/clientes/buscar` |
 | La tarjeta se crea sola con el primer sello | `POST /api/comercios/{id}/sellos` |
 | No se puede sellar dos veces seguidas (horas configurables) | `ProgramaSellos.HorasEntreSellos` |
 | Tarjeta completa: no suma más hasta canjear | `POST /api/comercios/{id}/sellos` |
-| Canje con código de 6 caracteres, sin letras confusas, con vencimiento | `POST /api/clientes/{id}/tarjetas/{tarjetaId}/canjear` |
+| Canje con código de 6 caracteres, sin letras confusas, con vencimiento | `POST /api/billetera/tarjetas/{tarjetaId}/canjear` |
 | El código solo sirve en su comercio y una sola vez | `POST /api/comercios/{id}/canjes/{codigo}/entregar` |
 | Niveles Bronce (0), Plata (10), Oro (30 sellos) por comercio | `Servicios/Reglas.cs` → `Niveles` |
 | Clientes en riesgo según su propio ritmo (2x = riesgo, 3x = crítico) | `GET /api/comercios/{id}/clientes-en-riesgo` |
 | Calculadora de costo del premio | `GET /api/comercios/{id}/costo-premio` |
 | Cumpleaños próximos | `GET /api/comercios/{id}/cumpleanos` |
 | Saludo de cumpleaños y "te extrañamos", sin repetir en 14 días | `Tareas/AvisosAutomaticos.cs` |
-| El cliente acepta o no promos de cada comercio | `PUT /api/clientes/{id}/tarjetas/{tarjetaId}/promos` |
+| El cliente acepta o no promos de cada comercio | `PUT /api/billetera/tarjetas/{tarjetaId}/promos` |
 | Reseña de Google como link, sin premio a cambio | `Comercio.ResenaGoogleUrl` |
 
 ## 4. Pasar a PostgreSQL (cuando subas a un servidor)
@@ -92,11 +117,8 @@ No hay que tocar código.
 
 En este orden:
 
-1. **Seguridad (imprescindible).** Hoy cualquiera puede llamar a cualquier endpoint.
-   - Comercios: usuarios con contraseña y roles (dueño / cajero), con ASP.NET Core Identity y JWT.
-   - Clientes: login con código de un solo uso por SMS o WhatsApp.
-   - Cada endpoint de comercio tiene que verificar que el usuario pertenece a ese comercio.
-   - Restringir CORS al dominio real.
+1. **SMS reales.** Reemplazar `EnviadorCodigosConsola` por una implementación de `IEnviadorCodigos` con un proveedor de SMS o WhatsApp (por ejemplo Twilio). Mientras tanto, en producción nadie podría recibir el código.
+   Faltan también: recuperar contraseña por email, cambiar la contraseña y, al publicar, configurar `Cors:OrigenesPermitidos` con el dominio real y servir todo por HTTPS.
 2. **Migraciones de EF Core** en lugar de `EnsureCreated`, para cambiar el modelo sin perder datos:
    ```
    dotnet tool install --global dotnet-ef

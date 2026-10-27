@@ -1,4 +1,5 @@
 using BilleteraSellos.Api.Dominio;
+using BilleteraSellos.Api.Seguridad;
 using Microsoft.EntityFrameworkCore;
 
 namespace BilleteraSellos.Api.Datos;
@@ -6,6 +7,8 @@ namespace BilleteraSellos.Api.Datos;
 /// <summary>Carga comercios y clientes de ejemplo la primera vez, para probar sin cargar nada a mano.</summary>
 public static class DatosDemo
 {
+    public const string ContrasenaDemo = "Demo1234";
+
     public static async Task CargarAsync(AppDbContext db)
     {
         if (await db.Comercios.AnyAsync()) return;
@@ -22,6 +25,15 @@ public static class DatosDemo
         var sofia = NuevoCliente("Sofía López", "33777888", "1162223333", hoy.AddYears(-27));
         var diego = NuevoCliente("Diego Ruiz", "25999000", "1164445555", new DateOnly(1988, 11, 20));
         db.Clientes.AddRange(lucia, martin, sofia, diego);
+
+        // Usuarios del panel. Contraseña de todos: Demo1234 (solo existen en desarrollo).
+        var hash = Contrasenas.Hashear(ContrasenaDemo);
+        db.Usuarios.AddRange(
+            new Usuario { Comercio = cafe, Nombre = "Carla (dueña)", Email = "cafe@demo.com", PasswordHash = hash, Rol = RolUsuario.Dueno },
+            new Usuario { Comercio = cafe, Nombre = "Juan (caja)", Email = "caja@cafe.demo", PasswordHash = hash, Rol = RolUsuario.Cajero },
+            new Usuario { Comercio = barberia, Nombre = "Nico (dueño)", Email = "barberia@demo.com", PasswordHash = hash, Rol = RolUsuario.Dueno },
+            new Usuario { Comercio = panaderia, Nombre = "Marta (dueña)", Email = "panaderia@demo.com", PasswordHash = hash, Rol = RolUsuario.Dueno },
+            new Usuario { Comercio = verduleria, Nombre = "Rosa (dueña)", Email = "verduleria@demo.com", PasswordHash = hash, Rol = RolUsuario.Dueno });
 
         // Historias de visitas: cada cuántos días venía y hace cuántos días vino por última vez.
         AgregarHistoria(db, lucia, cafe, visitas: 34, cadaDias: 3, ultimaHaceDias: 1);

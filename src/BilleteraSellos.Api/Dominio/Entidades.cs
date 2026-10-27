@@ -106,6 +106,7 @@ public class Canje
     public DateTime CreadoEn { get; set; } = DateTime.UtcNow;
     public DateTime VenceEn { get; set; }
     public DateTime? EntregadoEn { get; set; }
+    [MaxLength(120)] public string? EntregadoPor { get; set; }
 }
 
 public enum TipoAviso { Cumpleanos, Reactivacion, TarjetaCompleta, Promo }
