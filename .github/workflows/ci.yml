@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  PROYECTO: src/BilleteraSellos.Api/BilleteraSellos.Api.csproj
+
+jobs:
+  sqlite:
+    name: Compilar y prueba de humo (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restaurar paquetes
+        run: dotnet restore "$PROYECTO"
+
+      - name: Compilar (Release)
+        run: dotnet build "$PROYECTO" -c Release --no-restore /clp:Summary
+
+      - name: Levantar la API
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Avisos__Activos: "false"
+          Seguridad__PedidosLoginPorMinuto: "1000"
+        run: |
+          dotnet run --project "$PROYECTO" -c Release --no-build --urls http://127.0.0.1:5000 > api.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5000/salud > /dev/null; then echo "La API respondió"; exit 0; fi
+            sleep 1
+          done
+          echo "La API no arrancó"; cat api.log; exit 1
+
+      - name: Prueba de humo
+        run: bash pruebas/humo.sh http://127.0.0.1:5000
+
+      - name: Log de la API
+        if: always()
+        run: cat api.log || true
+
+  postgres:
+    name: Prueba de humo (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: billetera
+          POSTGRES_PASSWORD: "cl@ve;con=raros"
+          POSTGRES_DB: billetera
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U billetera"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Compilar (Release)
+        run: dotnet build "$PROYECTO" -c Release
+
+      # Se usa DATABASE_URL (como en Railway/Render) para probar también la conversión,
+      # con una contraseña con caracteres especiales codificados en la URL.
+      - name: Levantar la API contra PostgreSQL
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Avisos__Activos: "false"
+          Seguridad__PedidosLoginPorMinuto: "1000"
+          DATABASE_URL: postgres://billetera:cl%40ve%3Bcon%3Draros@localhost:5432/billetera
+        run: |
+          dotnet run --project "$PROYECTO" -c Release --no-build --urls http://127.0.0.1:5000 > api.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5000/salud > /dev/null; then echo "La API respondió"; exit 0; fi
+            sleep 1
+          done
+          echo "La API no arrancó"; cat api.log; exit 1
+
+      - name: Prueba de humo
+        run: bash pruebas/humo.sh http://127.0.0.1:5000
+
+      - name: Log de la API
+        if: always()
+        run: cat api.log || true
+
+  docker:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir la imagen
+        run: docker build -t billetera-sellos:ci .
+
+      - name: Arrancar la imagen y chequear /salud
+        run: |
+          docker run -d --name api -p 8080:8080 \
+            -e ASPNETCORE_ENVIRONMENT=Production -e Seguridad__ForzarHttps=false \
+            billetera-sellos:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/salud; then echo; echo "La imagen responde"; exit 0; fi
+            sleep 1
+          done
+          docker logs api; exit 1

@@ -1,5 +1,7 @@
 # Billetera de Sellos
 
+[![CI](https://github.com/sebatucco/BilleteraSellos/actions/workflows/ci.yml/badge.svg)](https://github.com/sebatucco/BilleteraSellos/actions/workflows/ci.yml)
+
 Tarjetas de sellos digitales de varios comercios en una sola billetera.
 API en ASP.NET Core 8 + Entity Framework Core, con una pantalla web para probar la caja y la billetera.
 
@@ -113,7 +115,60 @@ En `appsettings.json`:
 
 No hay que tocar código.
 
-## 5. Lo que falta antes de tener clientes reales
+## 5. Correr todo con Docker (opcional)
+
+Si tenés Docker Desktop, esto levanta la API y un PostgreSQL local, con los datos de ejemplo:
+
+```
+docker compose up --build
+```
+
+Abrí http://localhost:5225. Para borrar todo y empezar de cero: `docker compose down -v`.
+
+## 6. Publicar en un servidor (Railway)
+
+El proyecto ya trae un `Dockerfile`, así que Railway (o Render) lo construye solo desde GitHub.
+
+1. Entrá a https://railway.app con tu cuenta de GitHub y creá un proyecto nuevo: **Deploy from GitHub repo** → `BilleteraSellos`.
+2. En el mismo proyecto agregá una base: **New** → **Database** → **PostgreSQL**.
+3. En el servicio de la API, pestaña **Variables**, cargá:
+
+   | Variable | Valor |
+   |---|---|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (referencia a la base del paso 2) |
+   | `ASPNETCORE_ENVIRONMENT` | `Production` |
+   | `Cors__OrigenesPermitidos__0` | el dominio desde donde se usa la app, si es distinto del de la API (ej. `https://billetera.tudominio.com`) |
+
+   No hace falta configurar el puerto: la app lee `PORT`, que pone Railway. Tampoco la IP real ni el https: la imagen ya confía en los encabezados del proxy del hosting (`Proxy__ConfiarEnEncabezados=true`).
+4. En **Settings** → **Networking**, tocá **Generate Domain** para tener una URL pública con https.
+5. En **Settings** → **Healthcheck Path** poné `/salud`. Railway espera a que responda 200 antes de pasar el tráfico a la versión nueva.
+
+En **Render** es igual: **New** → **Web Service** desde el repo (detecta el Dockerfile), una base **PostgreSQL**, la variable `DATABASE_URL` con la *Internal Database URL* de la base, `ASPNETCORE_ENVIRONMENT=Production` y *Health Check Path* `/salud`.
+
+**Importante antes de lanzar:**
+
+- En producción **no se cargan los datos de ejemplo** ni existe Swagger: la base arranca vacía y los comercios se registran con `POST /api/auth/comercios/registro`.
+- La base se crea sola la primera vez (`EnsureCreated`). Eso sirve para probar, pero **no actualiza tablas existentes**: si cambia el modelo, la base de producción queda desfasada. Antes de tener clientes reales hay que pasar a migraciones (punto 2 de la lista de abajo).
+- Mientras los códigos se escriban en la consola, en producción nadie recibe el SMS: hace falta el proveedor de SMS (punto 1).
+
+### Integración continua
+
+Cada push y cada pull request corren en GitHub Actions (`.github/workflows/ci.yml`):
+
+- compila en Release con los paquetes reales,
+- levanta la API con SQLite y corre la prueba de humo `pruebas/humo.sh` (login, permisos entre comercios, roles, sellos, canjes, códigos, bloqueos),
+- repite la prueba contra un PostgreSQL 16 real, conectando con `DATABASE_URL`,
+- construye la imagen Docker y verifica que responde en `/salud`.
+
+Para correr la prueba de humo en tu PC, con la API levantada en Development y la base recién creada:
+
+```
+bash pruebas/humo.sh http://localhost:5225
+```
+
+(Necesita `curl` y `jq`; en Windows, desde Git Bash o WSL. Antes, arrancá la API con la variable `Seguridad__PedidosLoginPorMinuto=1000`, porque la prueba hace muchos logins seguidos.)
+
+## 7. Lo que falta antes de tener clientes reales
 
 En este orden:
 
@@ -129,4 +184,4 @@ En este orden:
    tarjetas de Google Wallet y Apple Wallet (avisos gratis en la pantalla bloqueada), y WhatsApp solo para lo que lo justifique.
 4. **Billetera instalable.** Convertir la pantalla en PWA (manifest + service worker) o pasar a Blazor/.NET MAUI.
 5. **Datos personales.** Términos, política de privacidad y consentimiento explícito al registrarse. En Argentina rige la Ley 25.326 de Protección de Datos Personales; conviene consultarlo con un profesional antes de lanzar.
-6. **Hosting:** Azure App Service, Railway o Render, con PostgreSQL administrado.
+6. **Hosting:** ya está preparado (Docker, `DATABASE_URL`, `PORT`, `/salud`, https detrás del proxy). Los pasos están en la sección 6.
