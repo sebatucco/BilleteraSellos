@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Billetera de Sellos</title>
+<!-- App instalable (PWA) -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2C47D6">
+<link rel="icon" href="/iconos/favicon-32.png">
+<link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sellos">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
 :root{--bg:#EEF0F5;--surface:#fff;--sunk:#E3E6EE;--fg:#171A26;--muted:#5D6375;--line:#D3D7E2;--accent:#2C47D6;--accent-fg:#fff;--good:#1E8A57;--warn:#B86A00;--bad:#C23A3A}
 @media (prefers-color-scheme:dark){:root{--bg:#10121A;--surface:#1A1D29;--sunk:#232736;--fg:#ECEEF5;--muted:#9AA0B4;--line:#2E3345;--accent:#7E93FF;--accent-fg:#0D1020;--good:#4CC98A;--warn:#F0A643;--bad:#F07171;color-scheme:dark}}
@@ -37,6 +46,18 @@ input,select{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;bo
 label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
 .link{background:none;padding:0;color:var(--accent);font-weight:600}
 .hint{font-size:12px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:8px 10px}
+/* QR y escáner */
+.btn-qr{width:100%;padding:14px;font-size:17px}
+.capa{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:calc(20px + env(safe-area-inset-top,0px)) 20px calc(20px + env(safe-area-inset-bottom,0px))}
+.capa-qr{background:#fff;color:#111}
+.capa-qr .nombre{font-size:20px;font-weight:700}
+.capa-qr .ayuda{font-size:13px;color:#555;text-align:center}
+.capa-qr button{background:#111;color:#fff;min-width:160px}
+.capa-scan{background:#000;color:#fff}
+.capa-scan video{width:100%;max-width:480px;aspect-ratio:1;object-fit:cover;border-radius:16px;background:#111}
+.capa-scan .mira{position:relative;width:100%;max-width:480px}
+.capa-scan .mira::after{content:"";position:absolute;inset:18%;border:3px solid rgba(255,255,255,.85);border-radius:18px;pointer-events:none}
+.capa-scan button{background:#fff;color:#111;min-width:160px}
 </style>
 </head>
 <body>
@@ -46,6 +67,7 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
 
   <!-- ===== CLIENTE ===== -->
   <section id="v-cli" class="stack">
+    <p class="msg small" id="unirse-aviso" hidden></p>
     <form class="panel" id="cli-tel" hidden>
       <h3>Entrá a tu billetera</h3>
       <label>Tu celular, con código de área<input id="cli-telefono" inputmode="tel" autocomplete="tel" placeholder="11 5487 3320"></label>
@@ -93,6 +115,7 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
       <div class="panel">
         <h3>Sumar sello</h3>
         <form class="row" id="com-buscar"><input id="com-q" placeholder="DNI, teléfono o código QR"><button class="primary">Buscar</button></form>
+        <button type="button" id="com-escanear">Escanear QR del cliente</button>
         <div id="com-found"></div>
       </div>
       <div class="panel">
@@ -102,6 +125,12 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
       </div>
       <div class="panel"><h3>Se están enfriando</h3><div id="riesgo"></div></div>
       <div class="panel"><h3>Cumpleaños próximos 7 días</h3><div id="cumples"></div></div>
+      <div class="panel">
+        <h3>Cartel para el mostrador</h3>
+        <p class="small muted">Imprimilo y dejalo en la caja: el cliente escanea el QR con la cámara y suma tu tarjeta a su billetera.</p>
+        <button type="button" id="com-cartel">Imprimir cartel</button>
+        <p class="small" id="cartel-msg"></p>
+      </div>
       <div class="panel">
         <h3>¿Cuánto me cuesta el premio?</h3>
         <div class="grid2">
@@ -136,6 +165,25 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
     </div>
   </section>
 </div>
+
+<!-- Mi QR a pantalla completa -->
+<div class="capa capa-qr" id="capa-qr" hidden role="dialog" aria-modal="true" aria-label="Mi código QR">
+  <p class="nombre" id="capa-qr-nombre"></p>
+  <canvas id="capa-qr-canvas" aria-label="Tu código QR personal"></canvas>
+  <p class="ayuda">Mostralo en la caja para sumar tu sello.<br>Si no lo lee, subí el brillo de la pantalla.</p>
+  <button type="button" id="capa-qr-cerrar">Listo</button>
+</div>
+
+<!-- Escáner de la caja -->
+<div class="capa capa-scan" id="capa-scan" hidden role="dialog" aria-modal="true" aria-label="Escanear QR">
+  <p>Apuntá al QR de la billetera del cliente</p>
+  <div class="mira"><video id="scan-video" playsinline muted></video></div>
+  <p class="small" id="scan-estado"></p>
+  <button type="button" id="scan-cerrar">Cancelar</button>
+</div>
+
+<script src="/lib/qrcode.min.js"></script>
+<script src="/js/qr.js"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -199,9 +247,11 @@ async function salirCliente(){
   tokCli=null;guardar("tokCli",null);pantallaCli("#cli-tel");
 }
 async function cargarBilletera(){
+  if(unirse&&tokCli)await sumarDesdeCartel();
   let b,todos;
   try{[b,todos]=await Promise.all([api("/billetera",{token:tokCli}),api("/comercios")])}
-  catch(x){if(x.status===401||x.status===403){tokCli=null;guardar("tokCli",null);pantallaCli("#cli-tel");return}throw x}
+  catch(x){if(x.status===401||x.status===403){tokCli=null;guardar("tokCli",null);pantallaCli("#cli-tel");return}
+    $("#billetera").innerHTML=`<p class="msg small bad">${esc(x.message)}</p><button data-reintentar-billetera>Reintentar</button>`;pantallaCli("#billetera");return}
   const tiene=new Set(b.tarjetas.map(t=>t.comercioId));
   $("#billetera").innerHTML=`<div class="row between"><h2>Hola, ${esc(b.nombre.split(" ")[0])}</h2><button data-salir-cli>Salir</button></div>`+
     (b.tarjetas.length?"":`<p class="msg small">Todavía no tenés tarjetas. Sumá la de algún comercio de abajo o escaneá el QR del mostrador.</p>`)+
@@ -215,7 +265,8 @@ async function cargarBilletera(){
         ${t.resenaGoogleUrl?`<a class="small" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener">Dejar una reseña en Google</a>`:""}
       </div>`}).join("")+
     `<div class="panel"><h3>Comercios adheridos</h3>${todos.filter(c=>!tiene.has(c.id)).map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${esc(c.rubro)} · ${esc(c.premio)}</p></div><button data-sumar="${esc(c.codigo)}">Sumar</button></div>`).join("")||'<p class="small muted">Ya tenés todas las tarjetas.</p>'}</div>`+
-    `<p class="small muted">Tu QR personal: <span class="code" style="font-size:12px">${esc(b.codigoQr)}</span></p>`;
+    "";
+  mostrarBotonQR(b);
   pantallaCli("#billetera");
 }
 
@@ -316,6 +367,7 @@ document.addEventListener("click",async e=>{
   const t=e.target.closest("button");if(!t)return;
   try{
     if(t.matches("[data-salir-cli]"))return salirCliente();
+    if(t.matches("[data-reintentar-billetera]"))return cargarBilletera();
     if(t.dataset.canjear){await api(`/billetera/tarjetas/${t.dataset.canjear}/canjear`,{token:tokCli,method:"POST"});return cargarBilletera()}
     if(t.dataset.sumar){await api("/billetera/tarjetas",{token:tokCli,method:"POST",body:{codigoComercio:t.dataset.sumar}});return cargarBilletera()}
     if(t.dataset.sello){
@@ -330,6 +382,144 @@ document.addEventListener("click",async e=>{
   }
 });
 
+/* ================= QR, CARTEL Y APP INSTALABLE ================= */
+
+/* --- Llegada desde el cartel del mostrador: /#unirse=codigo --- */
+let unirse=null, unirseMsg="";
+function leerEnlaceUnirse(){
+  const m=location.hash.match(/^#unirse=([a-z0-9-]{1,40})$/i);
+  unirse=m?decodeURIComponent(m[1]).toLowerCase():null;
+  if(!unirse){$("#unirse-aviso").hidden=true;return}
+  api("/comercios").then(cs=>{
+    const c=cs.find(x=>x.codigo===unirse);
+    if(!c){$("#unirse-aviso").hidden=true;unirse=null;limpiarEnlace();return}
+    if(!tokCli){$("#unirse-aviso").textContent=`Entrá con tu celular para sumar la tarjeta de ${c.nombre}.`;$("#unirse-aviso").hidden=false}
+  }).catch(()=>{});
+}
+function limpiarEnlace(){history.replaceState(null,"",location.pathname+location.search)}
+async function sumarDesdeCartel(){
+  const codigo=unirse;unirse=null;$("#unirse-aviso").hidden=true;limpiarEnlace();
+  try{
+    const r=await api("/billetera/tarjetas",{token:tokCli,method:"POST",body:{codigoComercio:codigo}});
+    unirseMsg=r.yaLaTenias?"Ya tenías esta tarjeta en tu billetera.":"¡Listo! Sumaste la tarjeta a tu billetera.";
+  }catch(x){if(x.status!==401&&x.status!==403)unirseMsg=x.message}
+}
+window.addEventListener("hashchange",()=>{leerEnlaceUnirse();if(unirse)modo("cli")});
+
+/* --- Mi QR --- */
+let miQr=null;
+function mostrarBotonQR(b){
+  miQr={codigo:b.codigoQr,nombre:b.nombre};
+  const cab=$("#billetera .row.between");
+  const btn=document.createElement("button");
+  btn.className="primary btn-qr";btn.id="ver-qr";btn.textContent="Mostrar mi QR";
+  cab.after(btn);
+  if(unirseMsg){const p=document.createElement("p");p.className="msg small";p.id="unirse-ok";p.textContent=unirseMsg;btn.after(p);unirseMsg=""}
+}
+let bloqueoPantalla=null;
+async function abrirMiQR(){
+  if(!miQr)return;
+  $("#capa-qr-nombre").textContent=miQr.nombre;
+  const lado=Math.min(window.innerWidth,window.innerHeight)*0.78;
+  dibujarQR(miQr.codigo,$("#capa-qr-canvas"),Math.max(200,Math.min(420,Math.floor(lado))));
+  $("#capa-qr").hidden=false;
+  // Que la pantalla no se apague mientras lo muestra.
+  try{bloqueoPantalla=await navigator.wakeLock?.request("screen")}catch{}
+}
+function cerrarMiQR(){$("#capa-qr").hidden=true;try{bloqueoPantalla?.release()}catch{}bloqueoPantalla=null}
+$("#capa-qr-cerrar").onclick=cerrarMiQR;
+document.addEventListener("click",e=>{if(e.target.closest("#ver-qr"))abrirMiQR()});
+
+/* --- Escáner de la caja ---
+   Usa BarcodeDetector cuando el navegador lo trae (Chrome/Android); si no (Safari, Firefox),
+   carga jsQR y lee cuadros del video en un canvas. */
+let detector=null, flujo=null, lazo=null;
+const lienzo=document.createElement("canvas");
+function cargarJsQR(){
+  if(window.jsQR)return Promise.resolve();
+  return new Promise((ok,mal)=>{const s=document.createElement("script");s.src="/lib/jsQR.min.js";s.onload=ok;s.onerror=()=>mal(new Error("No se pudo cargar el lector de QR."));document.head.appendChild(s)});
+}
+async function prepararLector(){
+  if(detector!==null)return;
+  try{
+    if("BarcodeDetector" in window&&(await BarcodeDetector.getSupportedFormats()).includes("qr_code")){detector=new BarcodeDetector({formats:["qr_code"]});return}
+  }catch{}
+  detector=false;await cargarJsQR();
+}
+/** Lee un QR de un video, imagen o canvas. Devuelve el texto o null. */
+async function decodificarCuadro(fuente){
+  await prepararLector();
+  if(detector){const r=await detector.detect(fuente);return r.length?r[0].rawValue:null}
+  const w=fuente.videoWidth||fuente.naturalWidth||fuente.width, h=fuente.videoHeight||fuente.naturalHeight||fuente.height;
+  if(!w||!h)return null;
+  const factor=Math.min(1,640/Math.max(w,h));   // achicar cuadros grandes: más rápido y igual de legible
+  lienzo.width=Math.round(w*factor);lienzo.height=Math.round(h*factor);
+  const ctx=lienzo.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(fuente,0,0,lienzo.width,lienzo.height);
+  const img=ctx.getImageData(0,0,lienzo.width,lienzo.height);
+  const r=jsQR(img.data,img.width,img.height,{inversionAttempts:"dontInvert"});
+  return r?r.data:null;
+}
+window.decodificarCuadro=decodificarCuadro;
+async function abrirEscaner(){
+  const estado=$("#scan-estado");estado.textContent="";
+  if(!navigator.mediaDevices?.getUserMedia){
+    err("#com-found","Este navegador no deja usar la cámara acá (hace falta HTTPS). Buscá por DNI o teléfono.");return;
+  }
+  $("#capa-scan").hidden=false;estado.textContent="Abriendo la cámara…";
+  try{
+    await prepararLector();
+    flujo=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+  }catch(x){
+    cerrarEscaner();
+    const m=x.name==="NotAllowedError"||x.name==="SecurityError"?"No diste permiso para usar la cámara. Habilitalo en el navegador o buscá por DNI o teléfono."
+      :x.name==="NotFoundError"?"No encontramos ninguna cámara. Buscá por DNI o teléfono."
+      :"No se pudo abrir la cámara. Buscá por DNI o teléfono.";
+    err("#com-found",m);return;
+  }
+  const v=$("#scan-video");v.srcObject=flujo;await v.play().catch(()=>{});
+  estado.textContent="Buscando un QR…";
+  let ocupado=false;
+  lazo=setInterval(async()=>{
+    if(ocupado||v.readyState<2)return;ocupado=true;
+    try{
+      const texto=await decodificarCuadro(v);
+      if(texto)usarLectura(texto);
+    }catch{}finally{ocupado=false}
+  },250);
+}
+function cerrarEscaner(){
+  clearInterval(lazo);lazo=null;
+  flujo?.getTracks().forEach(t=>t.stop());flujo=null;
+  const v=$("#scan-video");v.srcObject=null;
+  $("#capa-scan").hidden=true;
+}
+function usarLectura(texto){
+  cerrarEscaner();
+  if(/#unirse=/.test(texto)){err("#com-found","Ese es el QR de un comercio. Pedile al cliente el QR de su billetera (botón «Mostrar mi QR»).");return}
+  $("#com-q").value=texto.trim();
+  $("#com-buscar").requestSubmit();
+}
+$("#com-escanear").onclick=abrirEscaner;
+$("#scan-cerrar").onclick=cerrarEscaner;
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("#capa-scan").hidden)cerrarEscaner();if(!$("#capa-qr").hidden)cerrarMiQR()}});
+
+/* --- Cartel del mostrador --- */
+$("#com-cartel").onclick=async()=>{
+  err("#cartel-msg");
+  try{
+    const c=(await api("/comercios")).find(x=>x.id===yo.comercioId);
+    if(!c)throw new Error("No encontramos tu comercio en el directorio.");
+    location.href="/cartel.html?c="+encodeURIComponent(c.codigo);
+  }catch(x){err("#cartel-msg",x.message)}
+};
+
+/* --- App instalable --- */
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1")){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
+}
+
+leerEnlaceUnirse();
 modo("cli");
 </script>
 </body>
