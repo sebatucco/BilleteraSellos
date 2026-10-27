@@ -82,6 +82,24 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
       <button class="primary">Ingresar</button>
       <p class="hint">Prueba: cafe@demo.com (dueña) o caja@cafe.demo (cajero), contraseña Demo1234.</p>
       <p class="small" id="login-msg"></p>
+      <button type="button" class="link" id="olvide-abrir">¿Olvidaste tu contraseña?</button>
+    </form>
+
+    <!-- Recuperar contraseña -->
+    <form class="panel" id="com-olvide" hidden>
+      <h3>Recuperar contraseña</h3>
+      <p class="small muted">Te mandamos un link a tu email para crear una contraseña nueva.</p>
+      <label>Email<input id="olvide-email" type="email" autocomplete="username"></label>
+      <button class="primary">Mandarme el link</button>
+      <button type="button" class="link" id="olvide-volver">Volver a ingresar</button>
+      <p class="small" id="olvide-msg"></p>
+    </form>
+    <form class="panel" id="com-restablecer" hidden>
+      <h3>Creá tu contraseña nueva</h3>
+      <label>Contraseña nueva (8+ con letras y números)<input id="rest-pass" type="password" autocomplete="new-password"></label>
+      <label>Repetila<input id="rest-pass2" type="password" autocomplete="new-password"></label>
+      <button class="primary">Guardar contraseña</button>
+      <p class="small" id="rest-msg"></p>
     </form>
 
     <div id="panel" class="stack" hidden>
@@ -133,6 +151,14 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
           <p class="small" id="eq-msg"></p>
         </form>
       </div>
+      <!-- Cambiar contraseña -->
+      <form class="panel" id="cambiar-pass">
+        <h3>Cambiar mi contraseña</h3>
+        <label>Contraseña actual<input id="cp-actual" type="password" autocomplete="current-password"></label>
+        <label>Contraseña nueva (8+ con letras y números)<input id="cp-nueva" type="password" autocomplete="new-password"></label>
+        <button>Cambiar contraseña</button>
+        <p class="small" id="cp-msg"></p>
+      </form>
     </div>
   </section>
 </div>
@@ -330,7 +356,37 @@ document.addEventListener("click",async e=>{
   }
 });
 
-modo("cli");
+/* ===== Recuperar y cambiar contraseña ===== */
+function pantallaAcceso(id){["#com-login","#com-olvide","#com-restablecer"].forEach(s=>$(s).hidden=s!==id)}
+let tokenRestablecer=null;
+$("#olvide-abrir").onclick=()=>{$("#olvide-email").value=$("#login-email").value;err("#olvide-msg");pantallaAcceso("#com-olvide")};
+$("#olvide-volver").onclick=()=>pantallaAcceso("#com-login");
+$("#com-olvide").onsubmit=async e=>{
+  e.preventDefault();
+  try{const r=await api("/auth/comercios/olvide",{method:"POST",body:{email:$("#olvide-email").value}});
+    $("#olvide-msg").innerHTML=`<span class="good">${esc(r.mensaje)}</span>`}
+  catch(x){err("#olvide-msg",x.message)}
+};
+$("#com-restablecer").onsubmit=async e=>{
+  e.preventDefault();
+  if($("#rest-pass").value!==$("#rest-pass2").value){err("#rest-msg","Las dos contraseñas no coinciden.");return}
+  try{const r=await api("/auth/comercios/restablecer",{method:"POST",body:{token:tokenRestablecer,nueva:$("#rest-pass").value}});
+    tokenRestablecer=null;try{history.replaceState(null,"",location.pathname)}catch{}
+    pantallaAcceso("#com-login");$("#login-msg").innerHTML=`<span class="good">${esc(r.mensaje)}</span>`}
+  catch(x){err("#rest-msg",x.message)}
+};
+$("#cambiar-pass").onsubmit=async e=>{
+  e.preventDefault();
+  try{const r=await api("/auth/contrasena",{token:tokCom,method:"POST",body:{actual:$("#cp-actual").value,nueva:$("#cp-nueva").value}});
+    $("#cp-actual").value="";$("#cp-nueva").value="";$("#cp-msg").innerHTML=`<span class="good">${esc(r.mensaje)}</span>`}
+  catch(x){err("#cp-msg",x.message)}
+};
+
+// El link del email trae #restablecer=TOKEN: abre directo la pantalla para crear la contraseña.
+if(location.hash.startsWith("#restablecer=")){
+  tokenRestablecer=decodeURIComponent(location.hash.slice("#restablecer=".length));
+  tokCom=null;guardar("tokCom",null);modo("com");pantallaAcceso("#com-restablecer");
+}else modo("cli");
 </script>
 </body>
 </html>
