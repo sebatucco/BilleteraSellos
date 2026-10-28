@@ -1,0 +1,62 @@
+# Genera una migración de EF Core en GitHub y la commitea en la misma rama.
+# Sirve para crear migraciones sin tener dotnet-ef instalado (en tu PC conviene hacerlo con Visual Studio, ver README).
+#
+# Uso:
+#   1. Creá o actualizá la rama `generar-migracion` con los cambios del modelo.
+#   2. Opcional: escribí el nombre de la migración en pruebas/nombre-migracion.txt (por defecto "Inicial").
+#   3. Hacé push. Este workflow genera la migración en src/BilleteraSellos.Infraestructura/Persistencia/Migraciones
+#      y la commitea en la rama. Después traé ese commit a tu rama (merge o cherry-pick).
+name: Generar migración
+
+on:
+  push:
+    branches: [generar-migracion]
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  generar:
+    name: Generar migración
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Los commits que hace este mismo workflow no lo vuelven a disparar (GITHUB_TOKEN no dispara workflows),
+    # pero por las dudas se ignoran también por autor.
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Instalar dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 8.0.10
+
+      - name: Generar la migración si el modelo cambió
+        id: generar
+        run: |
+          NOMBRE=$(tr -dc 'A-Za-z0-9_' < pruebas/nombre-migracion.txt 2>/dev/null || true)
+          NOMBRE=${NOMBRE:-Inicial}
+          ARGS="--project src/BilleteraSellos.Infraestructura --startup-project src/BilleteraSellos.Api"
+          if dotnet ef migrations has-pending-model-changes $ARGS; then
+            echo "El modelo no tiene cambios pendientes: no hay nada que generar."
+            echo "hay=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          dotnet ef migrations add "$NOMBRE" $ARGS --output-dir Persistencia/Migraciones
+          echo "hay=true" >> "$GITHUB_OUTPUT"
+          echo "nombre=$NOMBRE" >> "$GITHUB_OUTPUT"
+
+      - name: Commitear la migración
+        if: steps.generar.outputs.hay == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/BilleteraSellos.Infraestructura/Persistencia/Migraciones
+          git commit -m "Migración ${{ steps.generar.outputs.nombre }} generada por GitHub Actions"
+          git push

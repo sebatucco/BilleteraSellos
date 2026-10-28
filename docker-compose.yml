@@ -1,0 +1,34 @@
+# Todo local con PostgreSQL:   docker compose up --build
+# Después abrí http://localhost:5225 (con los datos de ejemplo, igual que con dotnet run).
+# La API aplica las migraciones al arrancar. Si tenés un volumen de una versión anterior (creado sin migraciones),
+# borralo una vez con:   docker compose down -v
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: billetera
+      POSTGRES_USER: billetera
+      POSTGRES_PASSWORD: billetera
+    volumes:
+      - datos-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billetera"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "5225:8080"
+    environment:
+      # Development para tener los datos de ejemplo y Swagger. En un servidor real va Production.
+      ASPNETCORE_ENVIRONMENT: Development
+      BaseDeDatos__Proveedor: Postgres
+      ConnectionStrings__Principal: "Host=db;Port=5432;Database=billetera;Username=billetera;Password=billetera"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  datos-pg:

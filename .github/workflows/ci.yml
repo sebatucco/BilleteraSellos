@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  SOLUCION: BilleteraSellos.sln
+  PROYECTO: src/BilleteraSellos.Api/BilleteraSellos.Api.csproj
+
+jobs:
+  tests:
+    name: Compilar y tests unitarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restaurar paquetes
+        run: dotnet restore "$SOLUCION"
+
+      - name: Compilar (Release)
+        run: dotnet build "$SOLUCION" -c Release --no-restore /clp:Summary
+
+      - name: Tests unitarios
+        run: >-
+          dotnet test "$SOLUCION" -c Release --no-build
+          --logger "console;verbosity=detailed"
+          --logger "trx"
+          --results-directory resultados-tests
+
+      - name: Subir resultados de los tests
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: resultados-tests
+          path: resultados-tests/*.trx
+          if-no-files-found: ignore
+
+  migraciones:
+    name: Migraciones al día con el modelo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Instalar dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 8.0.10
+
+      # Falla si alguien cambió las entidades o las configuraciones de EF sin crear la migración correspondiente.
+      # Para crearla: ver "Migraciones" en el README.
+      - name: Revisar cambios del modelo sin migración
+        run: >-
+          dotnet ef migrations has-pending-model-changes
+          --project src/BilleteraSellos.Infraestructura
+          --startup-project src/BilleteraSellos.Api
+
+  sqlite:
+    name: Prueba de humo (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Compilar (Release)
+        run: dotnet build "$PROYECTO" -c Release /clp:Summary
+
+      - name: Levantar la API
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Avisos__Activos: "false"
+          Seguridad__PedidosLoginPorMinuto: "1000"
+        run: |
+          dotnet run --project "$PROYECTO" -c Release --no-build --urls http://127.0.0.1:5000 > api.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5000/salud > /dev/null; then echo "La API respondió"; exit 0; fi
+            sleep 1
+          done
+          echo "La API no arrancó"; cat api.log; exit 1
+
+      - name: Prueba de humo
+        run: bash pruebas/humo.sh http://127.0.0.1:5000
+
+      - name: Log de la API
+        if: always()
+        run: cat api.log || true
+
+  postgres:
+    name: Prueba de humo (PostgreSQL, con migraciones)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: billetera
+          POSTGRES_PASSWORD: "cl@ve;con=raros"
+          POSTGRES_DB: billetera
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U billetera"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Compilar (Release)
+        run: dotnet build "$PROYECTO" -c Release /clp:Summary
+
+      # Con PostgreSQL la app aplica las migraciones al arrancar (MigrateAsync), así que este job las prueba sobre una base vacía.
+      # Se usa DATABASE_URL (como en Railway/Render) para probar también la conversión,
+      # con una contraseña con caracteres especiales codificados en la URL.
+      - name: Levantar la API contra PostgreSQL
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Avisos__Activos: "false"
+          Seguridad__PedidosLoginPorMinuto: "1000"
+          DATABASE_URL: postgres://billetera:cl%40ve%3Bcon%3Draros@localhost:5432/billetera
+        run: |
+          dotnet run --project "$PROYECTO" -c Release --no-build --urls http://127.0.0.1:5000 > api.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:5000/salud > /dev/null; then echo "La API respondió"; exit 0; fi
+            sleep 1
+          done
+          echo "La API no arrancó"; cat api.log; exit 1
+
+      - name: Las migraciones quedaron aplicadas
+        env:
+          PGPASSWORD: "cl@ve;con=raros"
+        run: |
+          psql -h localhost -U billetera -d billetera -tAc 'SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY 1' | tee migraciones.txt
+          test -s migraciones.txt || { echo "No hay migraciones aplicadas: la app no corrió MigrateAsync"; exit 1; }
+
+      - name: Prueba de humo
+        run: bash pruebas/humo.sh http://127.0.0.1:5000
+
+      - name: Log de la API
+        if: always()
+        run: cat api.log || true
+
+  docker:
+    name: Imagen Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Construir la imagen
+        run: docker build -t billetera-sellos:ci .
+
+      - name: Arrancar la imagen y chequear /salud
+        run: |
+          docker run -d --name api -p 8080:8080 \
+            -e ASPNETCORE_ENVIRONMENT=Production -e Seguridad__ForzarHttps=false \
+            billetera-sellos:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/salud; then echo; echo "La imagen responde"; exit 0; fi
+            sleep 1
+          done
+          docker logs api; exit 1

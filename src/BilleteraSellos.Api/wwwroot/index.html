@@ -4,10 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Billetera de Sellos</title>
+<!-- App instalable (PWA) -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2C47D6">
+<link rel="icon" href="/iconos/favicon-32.png">
+<link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sellos">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
 :root{--bg:#EEF0F5;--surface:#fff;--sunk:#E3E6EE;--fg:#171A26;--muted:#5D6375;--line:#D3D7E2;--accent:#2C47D6;--accent-fg:#fff;--good:#1E8A57;--warn:#B86A00;--bad:#C23A3A}
 @media (prefers-color-scheme:dark){:root{--bg:#10121A;--surface:#1A1D29;--sunk:#232736;--fg:#ECEEF5;--muted:#9AA0B4;--line:#2E3345;--accent:#7E93FF;--accent-fg:#0D1020;--good:#4CC98A;--warn:#F0A643;--bad:#F07171;color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px 16px 48px}
 .wrap{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
 h1{font-size:24px;margin:0}h2{font-size:18px;margin:0}h3{font-size:16px;margin:0}p{margin:0}
@@ -33,6 +43,21 @@ input,select{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;bo
 .good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .msg{padding:10px 12px;border-radius:10px;background:var(--sunk)}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.link{background:none;padding:0;color:var(--accent);font-weight:600}
+.hint{font-size:12px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:8px 10px}
+/* QR y escáner */
+.btn-qr{width:100%;padding:14px;font-size:17px}
+.capa{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:calc(20px + env(safe-area-inset-top,0px)) 20px calc(20px + env(safe-area-inset-bottom,0px))}
+.capa-qr{background:#fff;color:#111}
+.capa-qr .nombre{font-size:20px;font-weight:700}
+.capa-qr .ayuda{font-size:13px;color:#555;text-align:center}
+.capa-qr button{background:#111;color:#fff;min-width:160px}
+.capa-scan{background:#000;color:#fff}
+.capa-scan video{width:100%;max-width:480px;aspect-ratio:1;object-fit:cover;border-radius:16px;background:#111}
+.capa-scan .mira{position:relative;width:100%;max-width:480px}
+.capa-scan .mira::after{content:"";position:absolute;inset:18%;border:3px solid rgba(255,255,255,.85);border-radius:18px;pointer-events:none}
+.capa-scan button{background:#fff;color:#111;min-width:160px}
 </style>
 </head>
 <body>
@@ -40,128 +65,519 @@ input,select{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;bo
   <h1>Billetera de Sellos</h1>
   <div class="mode"><button id="m-cli" aria-pressed="true">Cliente</button><button id="m-com" aria-pressed="false">Comercio</button></div>
 
+  <!-- ===== CLIENTE ===== -->
   <section id="v-cli" class="stack">
-    <div class="panel">
-      <h3>Entrar a mi billetera</h3>
-      <p class="small muted">Con DNI o teléfono. Probá con 30111222.</p>
-      <div class="row"><input id="cli-q" inputmode="numeric" placeholder="DNI o teléfono"><button class="primary" id="cli-entrar">Entrar</button></div>
-      <div id="cli-msg"></div>
-    </div>
-    <div id="billetera" class="stack"></div>
+    <p class="msg small" id="unirse-aviso" hidden></p>
+    <form class="panel" id="cli-tel" hidden>
+      <h3>Entrá a tu billetera</h3>
+      <label>Tu celular, con código de área<input id="cli-telefono" inputmode="tel" autocomplete="tel" placeholder="11 5487 3320"></label>
+      <button class="primary">Mandarme un código</button>
+      <p class="hint">Prueba: 1154873320 (Lucía, ya tiene tarjetas) o cualquier otro número para registrarte. En desarrollo el código aparece acá mismo.</p>
+      <p class="small" id="cli-tel-msg"></p>
+    </form>
+    <form class="panel" id="cli-cod" hidden>
+      <h3>Escribí el código</h3>
+      <p class="small muted" id="cli-cod-info"></p>
+      <input id="cli-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 números">
+      <button class="primary">Entrar</button>
+      <button type="button" class="link" id="cli-otro">Usar otro número</button>
+      <p class="small" id="cli-cod-msg"></p>
+    </form>
+    <form class="panel" id="cli-reg" hidden>
+      <h3>Creá tu cuenta</h3>
+      <p class="small muted">Una sola vez, y te sirve en todos los comercios adheridos.</p>
+      <label>Nombre y apellido<input id="reg-nombre" autocomplete="name"></label>
+      <label>DNI<input id="reg-dni" inputmode="numeric"></label>
+      <label>Fecha de nacimiento (para tu saludo de cumpleaños)<input id="reg-nac" type="date"></label>
+      <button class="primary">Crear cuenta</button>
+      <p class="small" id="cli-reg-msg"></p>
+    </form>
+    <div id="billetera" class="stack" hidden></div>
   </section>
 
+  <!-- ===== COMERCIO ===== -->
   <section id="v-com" class="stack" hidden>
-    <select id="com-sel" aria-label="Comercio"></select>
-    <div class="panel" id="resumen"></div>
-    <div class="panel">
-      <h3>Sumar sello</h3>
-      <div class="row"><input id="com-q" placeholder="DNI, teléfono o código QR"><button class="primary" id="com-buscar">Buscar</button></div>
-      <div id="com-found"></div>
-    </div>
-    <div class="panel">
-      <h3>Entregar premio</h3>
-      <div class="row"><input id="com-codigo" placeholder="Código de canje"><button id="com-entregar">Entregar</button></div>
-      <div id="com-entrega"></div>
-    </div>
-    <div class="panel"><h3>Se están enfriando</h3><div id="riesgo"></div></div>
-    <div class="panel"><h3>Cumpleaños próximos 7 días</h3><div id="cumples"></div></div>
-    <div class="panel">
-      <h3>¿Cuánto me cuesta el premio?</h3>
-      <div class="grid2">
-        <label class="stack small muted" style="gap:4px">Ticket promedio ($)<input id="c-ticket" type="number" value="4500"></label>
-        <label class="stack small muted" style="gap:4px">Compras con sello / mes<input id="c-vol" type="number" value="600"></label>
+    <form class="panel" id="com-login" hidden>
+      <h3>Ingresá al panel de tu comercio</h3>
+      <label>Email<input id="login-email" type="email" autocomplete="username"></label>
+      <label>Contraseña<input id="login-pass" type="password" autocomplete="current-password"></label>
+      <button class="primary">Ingresar</button>
+      <p class="hint">Prueba: cafe@demo.com (dueña) o caja@cafe.demo (cajero), contraseña Demo1234.</p>
+      <p class="small" id="login-msg"></p>
+      <button type="button" class="link" id="olvide-abrir">¿Olvidaste tu contraseña?</button>
+    </form>
+
+    <!-- Recuperar contraseña -->
+    <form class="panel" id="com-olvide" hidden>
+      <h3>Recuperar contraseña</h3>
+      <p class="small muted">Te mandamos un link a tu email para crear una contraseña nueva.</p>
+      <label>Email<input id="olvide-email" type="email" autocomplete="username"></label>
+      <button class="primary">Mandarme el link</button>
+      <button type="button" class="link" id="olvide-volver">Volver a ingresar</button>
+      <p class="small" id="olvide-msg"></p>
+    </form>
+    <form class="panel" id="com-restablecer" hidden>
+      <h3>Creá tu contraseña nueva</h3>
+      <label>Contraseña nueva (8+ con letras y números)<input id="rest-pass" type="password" autocomplete="new-password"></label>
+      <label>Repetila<input id="rest-pass2" type="password" autocomplete="new-password"></label>
+      <button class="primary">Guardar contraseña</button>
+      <p class="small" id="rest-msg"></p>
+    </form>
+
+    <div id="panel" class="stack" hidden>
+      <div class="row between">
+        <div><p class="small muted" id="panel-quien"></p><h2 id="panel-comercio"></h2></div>
+        <button id="com-salir">Salir</button>
       </div>
-      <div id="costo" class="msg"></div>
+      <div class="panel" id="resumen"></div>
+      <div class="panel">
+        <h3>Sumar sello</h3>
+        <form class="row" id="com-buscar"><input id="com-q" placeholder="DNI, teléfono o código QR"><button class="primary">Buscar</button></form>
+        <button type="button" id="com-escanear">Escanear QR del cliente</button>
+        <div id="com-found"></div>
+      </div>
+      <div class="panel">
+        <h3>Entregar premio</h3>
+        <form class="row" id="com-entregar"><input id="com-codigo" placeholder="Código de canje" autocapitalize="characters"><button>Entregar</button></form>
+        <div id="com-entrega"></div>
+      </div>
+      <div class="panel"><h3>Se están enfriando</h3><div id="riesgo"></div></div>
+      <div class="panel"><h3>Cumpleaños próximos 7 días</h3><div id="cumples"></div></div>
+      <div class="panel">
+        <h3>Cartel para el mostrador</h3>
+        <p class="small muted">Imprimilo y dejalo en la caja: el cliente escanea el QR con la cámara y suma tu tarjeta a su billetera.</p>
+        <button type="button" id="com-cartel">Imprimir cartel</button>
+        <p class="small" id="cartel-msg"></p>
+      </div>
+      <div class="panel">
+        <h3>¿Cuánto me cuesta el premio?</h3>
+        <div class="grid2">
+          <label>Ticket promedio ($)<input id="c-ticket" type="number" value="4500"></label>
+          <label>Compras con sello / mes<input id="c-vol" type="number" value="600"></label>
+        </div>
+        <div id="costo" class="msg"></div>
+      </div>
+      <form class="panel" id="programa" hidden>
+        <h3>Reglas de la tarjeta</h3>
+        <div class="grid2">
+          <label>Sellos para el premio<input id="p-sellos" type="number" min="3" max="30"></label>
+          <label>Costo del premio ($)<input id="p-costo" type="number" min="0"></label>
+          <label>Días para retirar<input id="p-dias" type="number" min="1" max="365"></label>
+          <label>Horas entre sellos<input id="p-horas" type="number" min="0" max="72"></label>
+        </div>
+        <label>Premio<input id="p-premio"></label>
+        <button class="primary">Guardar reglas</button>
+        <p class="small" id="p-msg"></p>
+      </form>
+      <div class="panel" id="equipo" hidden>
+        <h3>Tu equipo</h3>
+        <div id="equipo-lista"></div>
+        <form class="stack" id="equipo-nuevo">
+          <p class="small muted">Agregar cajero</p>
+          <div class="grid2"><input id="eq-nombre" placeholder="Nombre"><input id="eq-email" type="email" placeholder="Email"></div>
+          <input id="eq-pass" type="password" placeholder="Contraseña (8+ con letras y números)" autocomplete="new-password">
+          <button>Agregar</button>
+          <p class="small" id="eq-msg"></p>
+        </form>
+      </div>
+      <!-- Cambiar contraseña -->
+      <form class="panel" id="cambiar-pass">
+        <h3>Cambiar mi contraseña</h3>
+        <label>Contraseña actual<input id="cp-actual" type="password" autocomplete="current-password"></label>
+        <label>Contraseña nueva (8+ con letras y números)<input id="cp-nueva" type="password" autocomplete="new-password"></label>
+        <button>Cambiar contraseña</button>
+        <p class="small" id="cp-msg"></p>
+      </form>
     </div>
   </section>
 </div>
+
+<!-- Mi QR a pantalla completa -->
+<div class="capa capa-qr" id="capa-qr" hidden role="dialog" aria-modal="true" aria-label="Mi código QR">
+  <p class="nombre" id="capa-qr-nombre"></p>
+  <canvas id="capa-qr-canvas" aria-label="Tu código QR personal"></canvas>
+  <p class="ayuda">Mostralo en la caja para sumar tu sello.<br>Si no lo lee, subí el brillo de la pantalla.</p>
+  <button type="button" id="capa-qr-cerrar">Listo</button>
+</div>
+
+<!-- Escáner de la caja -->
+<div class="capa capa-scan" id="capa-scan" hidden role="dialog" aria-modal="true" aria-label="Escanear QR">
+  <p>Apuntá al QR de la billetera del cliente</p>
+  <div class="mira"><video id="scan-video" playsinline muted></video></div>
+  <p class="small" id="scan-estado"></p>
+  <button type="button" id="scan-cerrar">Cancelar</button>
+</div>
+
+<script src="/lib/qrcode.min.js"></script>
+<script src="/js/qr.js"></script>
 <script>
-const api=async(url,opt={})=>{
-  const r=await fetch("/api"+url,{headers:{"Content-Type":"application/json"},...opt});
-  const body=r.status===204?null:await r.json().catch(()=>null);
-  if(!r.ok)throw new Error(body?.error||("Error "+r.status));
-  return body;
-};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=n=>"$"+Math.round(n).toLocaleString("es-AR");
-let clienteId=null, comercioId=null;
+const err=(el,m)=>{$(el).innerHTML=m?`<span class="bad">${esc(m)}</span>`:""};
 
-function modo(m){$("#v-cli").hidden=m!=="cli";$("#v-com").hidden=m!=="com";$("#m-cli").setAttribute("aria-pressed",m==="cli");$("#m-com").setAttribute("aria-pressed",m==="com")}
-$("#m-cli").onclick=()=>{modo("cli");if(clienteId)cargarBilletera()};
-$("#m-com").onclick=()=>{modo("com");cargarComercio()};
+/* Tokens guardados en este navegador (uno para el cliente y otro para el comercio). */
+const guardar=(k,v)=>{try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch{}};
+const leer=k=>{try{return localStorage.getItem(k)}catch{return null}};
+let tokCli=leer("tokCli"), tokCom=leer("tokCom"), tokReg=null, yo=null, telefono="";
 
-/* ---- Cliente ---- */
-$("#cli-entrar").onclick=async()=>{
+async function api(url,{token,method="GET",body}={}){
+  const h={"Content-Type":"application/json"};
+  if(token)h.Authorization="Bearer "+token;
+  const r=await fetch("/api"+url,{method,headers:h,body:body?JSON.stringify(body):undefined});
+  const data=r.status===204?null:await r.json().catch(()=>null);
+  if(!r.ok){const e=new Error(data?.error||("Error "+r.status));e.status=r.status;throw e}
+  return data;
+}
+
+function modo(m){
+  $("#v-cli").hidden=m!=="cli";$("#v-com").hidden=m!=="com";
+  $("#m-cli").setAttribute("aria-pressed",m==="cli");$("#m-com").setAttribute("aria-pressed",m==="com");
+  m==="cli"?mostrarCliente():mostrarComercio();
+}
+$("#m-cli").onclick=()=>modo("cli");
+$("#m-com").onclick=()=>modo("com");
+
+/* ================= CLIENTE ================= */
+function pantallaCli(id){["#cli-tel","#cli-cod","#cli-reg","#billetera"].forEach(s=>$(s).hidden=s!==id)}
+function mostrarCliente(){tokCli?cargarBilletera():pantallaCli("#cli-tel")}
+
+$("#cli-tel").onsubmit=async e=>{
+  e.preventDefault();err("#cli-tel-msg");
   try{
-    // La caja y la billetera usan la misma búsqueda; en producción esto sería login con código por SMS.
-    const c=await api(`/comercios/1/clientes/buscar?q=${encodeURIComponent($("#cli-q").value)}`);
-    clienteId=c.clienteId;$("#cli-msg").innerHTML="";cargarBilletera();
-  }catch(e){$("#cli-msg").innerHTML=`<p class="small bad">${esc(e.message)}</p>`}
+    telefono=$("#cli-telefono").value;
+    const r=await api("/auth/clientes/codigo",{method:"POST",body:{telefono}});
+    $("#cli-cod-info").innerHTML=`Te lo mandamos al ${esc(telefono)}. Vence en ${r.venceEnMinutos} minutos.`+
+      (r.codigoDesarrollo?`<br><span class="hint">Modo desarrollo: tu código es <b>${r.codigoDesarrollo}</b></span>`:"");
+    $("#cli-codigo").value="";pantallaCli("#cli-cod");$("#cli-codigo").focus();
+  }catch(x){err("#cli-tel-msg",x.message)}
 };
+$("#cli-otro").onclick=()=>pantallaCli("#cli-tel");
+$("#cli-cod").onsubmit=async e=>{
+  e.preventDefault();err("#cli-cod-msg");
+  try{
+    const r=await api("/auth/clientes/verificar",{method:"POST",body:{telefono,codigo:$("#cli-codigo").value}});
+    if(r.requiereRegistro){tokReg=r.token;pantallaCli("#cli-reg");$("#reg-nombre").focus()}
+    else{tokCli=r.token;guardar("tokCli",tokCli);cargarBilletera()}
+  }catch(x){err("#cli-cod-msg",x.message)}
+};
+$("#cli-reg").onsubmit=async e=>{
+  e.preventDefault();err("#cli-reg-msg");
+  try{
+    const r=await api("/clientes",{token:tokReg,method:"POST",body:{nombre:$("#reg-nombre").value,dni:$("#reg-dni").value,fechaNacimiento:$("#reg-nac").value||null}});
+    tokReg=null;tokCli=r.token;guardar("tokCli",tokCli);cargarBilletera();
+  }catch(x){err("#cli-reg-msg",x.message)}
+};
+async function salirCliente(){
+  try{await api("/auth/salir",{token:tokCli,method:"POST"})}catch{}
+  tokCli=null;guardar("tokCli",null);pantallaCli("#cli-tel");
+}
 async function cargarBilletera(){
-  const b=await api(`/clientes/${clienteId}/billetera`);
-  const todos=await api("/comercios");
+  if(unirse&&tokCli)await sumarDesdeCartel();
+  let b,todos;
+  try{[b,todos]=await Promise.all([api("/billetera",{token:tokCli}),api("/comercios")])}
+  catch(x){if(x.status===401||x.status===403){tokCli=null;guardar("tokCli",null);pantallaCli("#cli-tel");return}
+    $("#billetera").innerHTML=`<p class="msg small bad">${esc(x.message)}</p><button data-reintentar-billetera>Reintentar</button>`;pantallaCli("#billetera");return}
   const tiene=new Set(b.tarjetas.map(t=>t.comercioId));
-  $("#billetera").innerHTML=`<h2>Hola, ${esc(b.nombre.split(" ")[0])}</h2>`+b.tarjetas.map(t=>{
-    let st="";for(let i=0;i<t.sellosNecesarios;i++)st+=`<span class="stamp${i<t.sellosActuales?" on":""}">${i<t.sellosActuales?"✓":i+1}</span>`;
-    const pend=t.canjesPendientes.map(k=>`<div><p class="small">Código para la caja</p><p class="code">${k.codigo}</p><p class="small">${esc(k.premio)} · vence ${new Date(k.venceEn).toLocaleDateString("es-AR")}</p></div>`).join("");
-    return `<div class="card" style="background:${esc(t.color)};--c:${esc(t.color)}">
-      <div class="row between"><b style="font-size:18px">${esc(t.comercio)}</b><span class="tier">${t.nivel}</span></div>
-      <div class="stamps">${st}</div>
-      ${pend}
-      ${t.completa?`<button data-canjear="${t.tarjetaId}">Canjear: ${esc(t.premio)}</button>`:`<p class="small">Te faltan ${t.sellosNecesarios-t.sellosActuales} para: ${esc(t.premio)}</p>`}
-      ${t.resenaGoogleUrl?`<a class="small" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener">Dejar una reseña en Google</a>`:""}
-    </div>`}).join("")+
-    `<div class="panel"><h3>Comercios adheridos</h3>${todos.filter(c=>!tiene.has(c.id)).map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${esc(c.rubro)} · ${esc(c.premio)}</p></div><button data-sumar="${esc(c.codigo)}">Sumar</button></div>`).join("")||'<p class="small muted">Ya tenés todas las tarjetas.</p>'}</div>`;
+  $("#billetera").innerHTML=`<div class="row between"><h2>Hola, ${esc(b.nombre.split(" ")[0])}</h2><button data-salir-cli>Salir</button></div>`+
+    (b.tarjetas.length?"":`<p class="msg small">Todavía no tenés tarjetas. Sumá la de algún comercio de abajo o escaneá el QR del mostrador.</p>`)+
+    b.tarjetas.map(t=>{
+      let st="";for(let i=0;i<t.sellosNecesarios;i++)st+=`<span class="stamp${i<t.sellosActuales?" on":""}">${i<t.sellosActuales?"✓":i+1}</span>`;
+      const pend=t.canjesPendientes.map(k=>`<div><p class="small">Código para la caja</p><p class="code">${esc(k.codigo)}</p><p class="small">${esc(k.premio)} · vence ${new Date(k.venceEn).toLocaleDateString("es-AR")}</p></div>`).join("");
+      return `<div class="card" style="background:${esc(t.color)};--c:${esc(t.color)}">
+        <div class="row between"><b style="font-size:18px">${esc(t.comercio)}</b><span class="tier">${t.nivel}</span></div>
+        <div class="stamps">${st}</div>${pend}
+        ${t.completa?`<button data-canjear="${t.tarjetaId}">Canjear: ${esc(t.premio)}</button>`:`<p class="small">${t.sellosNecesarios-t.sellosActuales===1?"Te falta 1":"Te faltan "+(t.sellosNecesarios-t.sellosActuales)} para: ${esc(t.premio)}</p>`}
+        ${t.resenaGoogleUrl?`<a class="small" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener">Dejar una reseña en Google</a>`:""}
+      </div>`}).join("")+
+    `<div class="panel"><h3>Comercios adheridos</h3>${todos.filter(c=>!tiene.has(c.id)).map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${esc(c.rubro)} · ${esc(c.premio)}</p></div><button data-sumar="${esc(c.codigo)}">Sumar</button></div>`).join("")||'<p class="small muted">Ya tenés todas las tarjetas.</p>'}</div>`+
+    "";
+  mostrarBotonQR(b);
+  pantallaCli("#billetera");
 }
-document.addEventListener("click",async e=>{
-  const c=e.target.closest("[data-canjear]");
-  if(c){try{await api(`/clientes/${clienteId}/tarjetas/${c.dataset.canjear}/canjear`,{method:"POST"});cargarBilletera()}catch(x){alert(x.message)}}
-  const s=e.target.closest("[data-sumar]");
-  if(s){await api(`/clientes/${clienteId}/tarjetas`,{method:"POST",body:JSON.stringify({codigoComercio:s.dataset.sumar})});cargarBilletera()}
-  const a=e.target.closest("[data-sello]");
-  if(a){try{const r=await api(`/comercios/${comercioId}/sellos`,{method:"POST",body:JSON.stringify({clienteId:+a.dataset.sello,cargadoPor:"caja"})});
-    $("#com-found").innerHTML=`<p class="msg">${r.tarjetaCompleta?"¡Tarjeta completa! Ya puede canjear.":`Sello sumado: ${r.sellosActuales} de ${r.sellosNecesarios}.`}</p>`;cargarResumen()}
-    catch(x){$("#com-found").innerHTML=`<p class="small bad">${esc(x.message)}</p>`}}
-});
 
-/* ---- Comercio ---- */
-async function cargarComercio(){
-  if(!comercioId){
-    const cs=await api("/comercios");
-    $("#com-sel").innerHTML=cs.map(c=>`<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
-    comercioId=+$("#com-sel").value;
-  }
-  cargarResumen();
+/* ================= COMERCIO ================= */
+function mostrarComercio(){
+  if(!tokCom){$("#com-login").hidden=false;$("#panel").hidden=true;return}
+  cargarPanel();
 }
-$("#com-sel").onchange=e=>{comercioId=+e.target.value;$("#com-found").innerHTML="";cargarResumen()};
+$("#com-login").onsubmit=async e=>{
+  e.preventDefault();err("#login-msg");
+  try{
+    const r=await api("/auth/comercios/login",{method:"POST",body:{email:$("#login-email").value,contrasena:$("#login-pass").value}});
+    tokCom=r.token;guardar("tokCom",tokCom);$("#login-pass").value="";cargarPanel();
+  }catch(x){err("#login-msg",x.message)}
+};
+$("#com-salir").onclick=async()=>{
+  try{await api("/auth/salir",{token:tokCom,method:"POST"})}catch{}
+  tokCom=null;yo=null;guardar("tokCom",null);mostrarComercio();
+};
+const com=(url,opt={})=>api(`/comercios/${yo.comercioId}${url}`,{token:tokCom,...opt});
+
+async function cargarPanel(){
+  try{yo=await api("/auth/yo",{token:tokCom})}
+  catch(x){tokCom=null;guardar("tokCom",null);mostrarComercio();return}
+  if(yo.tipo!=="Comercio"){tokCom=null;guardar("tokCom",null);mostrarComercio();return}
+  $("#com-login").hidden=true;$("#panel").hidden=false;
+  $("#panel-quien").textContent=`${yo.nombre} · ${yo.rol==="Dueno"?"Dueño":"Cajero"}`;
+  $("#panel-comercio").textContent=yo.comercio;
+  const dueno=yo.rol==="Dueno";
+  $("#programa").hidden=!dueno;$("#equipo").hidden=!dueno;
+  await Promise.all([cargarResumen(),dueno?cargarPrograma():null,dueno?cargarEquipo():null]);
+}
 async function cargarResumen(){
-  const r=await api(`/comercios/${comercioId}/resumen`);
+  const [r,rs,cb]=await Promise.all([com("/resumen"),com("/clientes-en-riesgo"),com("/cumpleanos?dias=7")]);
   $("#resumen").innerHTML=`<div class="grid2"><p><b style="font-size:22px">${r.clientes}</b><br><span class="small muted">clientes</span></p><p><b style="font-size:22px">${r.sellosUltimos30Dias}</b><br><span class="small muted">sellos en 30 días</span></p><p><b style="font-size:22px">${r.clientesEnRiesgo}</b><br><span class="small muted">en riesgo</span></p><p><b style="font-size:22px">${r.canjesPendientes}</b><br><span class="small muted">premios por entregar</span></p></div>`;
-  const rs=await api(`/comercios/${comercioId}/clientes-en-riesgo`);
   $("#riesgo").innerHTML=rs.map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${c.diasSinVenir} días sin venir · venía cada ${c.cadaCuantosDias}</p></div><span class="pill ${c.estado==="Critico"?"bad":"warn"}">${c.estado==="Critico"?"Crítico":"En riesgo"}</span></div>`).join("")||'<p class="small muted">Nadie se está enfriando.</p>';
-  const cb=await api(`/comercios/${comercioId}/cumpleanos?dias=7`);
-  $("#cumples").innerHTML=cb.map(c=>`<div class="item"><div class="grow">${esc(c.nombre)}</div><span class="small muted">${c.enDias===0?"hoy":"en "+c.enDias+" días"}</span></div>`).join("")||'<p class="small muted">Nadie cumple años esta semana.</p>';
+  $("#cumples").innerHTML=cb.map(c=>`<div class="item"><div class="grow">${esc(c.nombre)}</div><span class="small muted">${c.enDias===0?"hoy":c.enDias===1?"mañana":"en "+c.enDias+" días"}</span></div>`).join("")||'<p class="small muted">Nadie cumple años esta semana.</p>';
   calcular();
 }
-$("#com-buscar").onclick=async()=>{
-  try{const c=await api(`/comercios/${comercioId}/clientes/buscar?q=${encodeURIComponent($("#com-q").value)}`);
-    $("#com-found").innerHTML=`<div class="msg stack"><div class="row between"><b>${esc(c.nombre)}</b><span class="pill">${c.nivel}</span></div><p class="small muted">${c.tieneTarjeta?`${c.sellosActuales} de ${c.sellosNecesarios} sellos`:"Todavía no tiene tu tarjeta: se crea con este sello"}</p><button class="primary" data-sello="${c.clienteId}">Sumar 1 sello</button></div>`}
-  catch(e){$("#com-found").innerHTML=`<p class="small bad">${esc(e.message)}</p>`}
+function tarjetaEnCaja(c){
+  return `<div class="msg stack"><div class="row between"><b>${esc(c.nombre)}</b><span class="pill">${c.nivel}</span></div><p class="small muted">${c.tieneTarjeta?`${c.sellosActuales} de ${c.sellosNecesarios} sellos`:"Todavía no tiene tu tarjeta: se crea con este sello"}</p><button class="primary" data-sello="${c.clienteId}">Sumar 1 sello</button></div>`;
+}
+$("#com-buscar").onsubmit=async e=>{
+  e.preventDefault();
+  const q=$("#com-q").value.trim();
+  try{$("#com-found").innerHTML=tarjetaEnCaja(await com(`/clientes/buscar?q=${encodeURIComponent(q)}`))}
+  catch(x){
+    if(x.status!==404){err("#com-found",x.message);return}
+    // No existe: se ofrece darlo de alta ahí mismo, solo con sus datos básicos.
+    const digitos=q.replace(/\D/g,""), dni=digitos.length>=7&&digitos.length<=9?digitos:"";
+    $("#com-found").innerHTML=`<form class="msg stack" id="alta"><p class="small">No hay nadie con <b>${esc(q)}</b>. Registralo:</p>
+      <input id="alta-nombre" placeholder="Nombre y apellido"><div class="grid2"><input id="alta-dni" placeholder="DNI" inputmode="numeric" value="${esc(dni)}"><input id="alta-tel" placeholder="Celular" inputmode="tel"></div>
+      <button class="primary">Registrar y seguir</button><p class="small" id="alta-msg"></p></form>`;
+    $("#alta").onsubmit=async ev=>{
+      ev.preventDefault();
+      try{const c=await com("/clientes",{method:"POST",body:{nombre:$("#alta-nombre").value,dni:$("#alta-dni").value,telefono:$("#alta-tel").value}});$("#com-found").innerHTML=tarjetaEnCaja(c)}
+      catch(y){err("#alta-msg",y.message)}
+    };
+  }
 };
-$("#com-entregar").onclick=async()=>{
-  try{const r=await api(`/comercios/${comercioId}/canjes/${encodeURIComponent($("#com-codigo").value.trim())}/entregar`,{method:"POST"});
-    $("#com-entrega").innerHTML=`<p class="msg good">Entregá: ${esc(r.premio)} a ${esc(r.cliente)}.</p>`;cargarResumen()}
-  catch(e){$("#com-entrega").innerHTML=`<p class="small bad">${esc(e.message)}</p>`}
+$("#com-entregar").onsubmit=async e=>{
+  e.preventDefault();
+  try{const r=await com(`/canjes/${encodeURIComponent($("#com-codigo").value.trim())}/entregar`,{method:"POST"});
+    $("#com-entrega").innerHTML=`<p class="msg good">Entregá: ${esc(r.premio)} a ${esc(r.cliente)}.</p>`;$("#com-codigo").value="";cargarResumen()}
+  catch(x){err("#com-entrega",x.message)}
 };
 async function calcular(){
-  try{const c=await api(`/comercios/${comercioId}/costo-premio?ticketPromedio=${+$("#c-ticket").value||0}&comprasConSelloPorMes=${+$("#c-vol").value||0}`);
+  try{const c=await com(`/costo-premio?ticketPromedio=${+$("#c-ticket").value||0}&comprasConSelloPorMes=${+$("#c-vol").value||0}`);
     const tono=c.semaforo==="Sano"?"good":c.semaforo==="Revisalo"?"warn":"bad";
     $("#costo").innerHTML=`<p class="small muted">Te cuesta por mes</p><p style="font-size:26px;font-weight:800">${fmt(c.costoMensual)} <span class="pill ${tono}">${c.semaforo}</span></p><p class="small muted">≈ ${c.premiosPorMes} premios · ${c.porcentajeDeVentas}% de esas ventas · ${fmt(c.costoPorCompra)} por compra</p>`}
-  catch(e){$("#costo").textContent=e.message}
+  catch(x){$("#costo").textContent=x.message}
 }
 $("#c-ticket").oninput=calcular;$("#c-vol").oninput=calcular;
+
+async function cargarPrograma(){
+  const p=await com("/programa");
+  $("#p-sellos").value=p.sellosNecesarios;$("#p-costo").value=p.costoPremio;$("#p-dias").value=p.diasParaRetirar;$("#p-horas").value=p.horasEntreSellos;$("#p-premio").value=p.premio;
+}
+$("#programa").onsubmit=async e=>{
+  e.preventDefault();
+  try{await com("/programa",{method:"PUT",body:{sellosNecesarios:+$("#p-sellos").value,premio:$("#p-premio").value,costoPremio:+$("#p-costo").value,diasParaRetirar:+$("#p-dias").value,horasEntreSellos:+$("#p-horas").value}});
+    $("#p-msg").innerHTML='<span class="good">Guardado.</span>';calcular()}
+  catch(x){err("#p-msg",x.message)}
+};
+async function cargarEquipo(){
+  const us=await com("/usuarios");
+  $("#equipo-lista").innerHTML=us.map(u=>`<div class="item"><div class="grow"><b>${esc(u.nombre)}</b><p class="small muted">${esc(u.email)} · ${u.rol==="Dueno"?"Dueño":"Cajero"}</p></div>${u.id===yo.usuarioId?'<span class="small muted">Vos</span>':`<button data-activo="${u.id}" data-valor="${!u.activo}">${u.activo?"Desactivar":"Activar"}</button>`}</div>`).join("");
+}
+$("#equipo-nuevo").onsubmit=async e=>{
+  e.preventDefault();
+  try{await com("/usuarios",{method:"POST",body:{nombre:$("#eq-nombre").value,email:$("#eq-email").value,contrasena:$("#eq-pass").value}});
+    ["#eq-nombre","#eq-email","#eq-pass"].forEach(s=>$(s).value="");err("#eq-msg");cargarEquipo()}
+  catch(x){err("#eq-msg",x.message)}
+};
+
+/* Botones dentro de listas que se redibujan */
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("button");if(!t)return;
+  try{
+    if(t.matches("[data-salir-cli]"))return salirCliente();
+    if(t.matches("[data-reintentar-billetera]"))return cargarBilletera();
+    if(t.dataset.canjear){await api(`/billetera/tarjetas/${t.dataset.canjear}/canjear`,{token:tokCli,method:"POST"});return cargarBilletera()}
+    if(t.dataset.sumar){await api("/billetera/tarjetas",{token:tokCli,method:"POST",body:{codigoComercio:t.dataset.sumar}});return cargarBilletera()}
+    if(t.dataset.sello){
+      const r=await com("/sellos",{method:"POST",body:{clienteId:+t.dataset.sello}});
+      $("#com-found").innerHTML=`<p class="msg">${r.tarjetaCompleta?"¡Tarjeta completa! Ya puede canjear el premio.":`Sello sumado: ${r.sellosActuales} de ${r.sellosNecesarios}.`}</p>`;
+      return cargarResumen();
+    }
+    if(t.dataset.activo){await com(`/usuarios/${t.dataset.activo}/activo`,{method:"PUT",body:{activo:t.dataset.valor==="true"}});return cargarEquipo()}
+  }catch(x){
+    const destino=t.dataset.sello?"#com-found":t.dataset.activo?"#eq-msg":null;
+    if(destino)err(destino,x.message);else alert(x.message);
+  }
+});
+
+/* ===== Recuperar y cambiar contraseña ===== */
+function pantallaAcceso(id){["#com-login","#com-olvide","#com-restablecer"].forEach(s=>$(s).hidden=s!==id)}
+let tokenRestablecer=null;
+$("#olvide-abrir").onclick=()=>{$("#olvide-email").value=$("#login-email").value;err("#olvide-msg");pantallaAcceso("#com-olvide")};
+$("#olvide-volver").onclick=()=>pantallaAcceso("#com-login");
+$("#com-olvide").onsubmit=async e=>{
+  e.preventDefault();
+  try{const r=await api("/auth/comercios/olvide",{method:"POST",body:{email:$("#olvide-email").value}});
+    $("#olvide-msg").innerHTML=`<span class="good">${esc(r.mensaje)}</span>`}
+  catch(x){err("#olvide-msg",x.message)}
+};
+$("#com-restablecer").onsubmit=async e=>{
+  e.preventDefault();
+  if($("#rest-pass").value!==$("#rest-pass2").value){err("#rest-msg","Las dos contraseñas no coinciden.");return}
+  try{const r=await api("/auth/comercios/restablecer",{method:"POST",body:{token:tokenRestablecer,nueva:$("#rest-pass").value}});
+    tokenRestablecer=null;try{history.replaceState(null,"",location.pathname)}catch{}
+    pantallaAcceso("#com-login");$("#login-msg").innerHTML=`<span class="good">${esc(r.mensaje)}</span>`}
+  catch(x){err("#rest-msg",x.message)}
+};
+$("#cambiar-pass").onsubmit=async e=>{
+  e.preventDefault();
+  try{const r=await api("/auth/contrasena",{token:tokCom,method:"POST",body:{actual:$("#cp-actual").value,nueva:$("#cp-nueva").value}});
+    $("#cp-actual").value="";$("#cp-nueva").value="";$("#cp-msg").innerHTML=`<span class="good">${esc(r.mensaje)}</span>`}
+  catch(x){err("#cp-msg",x.message)}
+};
+
+/* ================= QR, CARTEL Y APP INSTALABLE ================= */
+
+/* --- Llegada desde el cartel del mostrador: /#unirse=codigo --- */
+let unirse=null, unirseMsg="";
+function leerEnlaceUnirse(){
+  const m=location.hash.match(/^#unirse=([a-z0-9-]{1,40})$/i);
+  unirse=m?decodeURIComponent(m[1]).toLowerCase():null;
+  if(!unirse){$("#unirse-aviso").hidden=true;return}
+  api("/comercios").then(cs=>{
+    const c=cs.find(x=>x.codigo===unirse);
+    if(!c){$("#unirse-aviso").hidden=true;unirse=null;limpiarEnlace();return}
+    if(!tokCli){$("#unirse-aviso").textContent=`Entrá con tu celular para sumar la tarjeta de ${c.nombre}.`;$("#unirse-aviso").hidden=false}
+  }).catch(()=>{});
+}
+function limpiarEnlace(){history.replaceState(null,"",location.pathname+location.search)}
+async function sumarDesdeCartel(){
+  const codigo=unirse;unirse=null;$("#unirse-aviso").hidden=true;limpiarEnlace();
+  try{
+    const r=await api("/billetera/tarjetas",{token:tokCli,method:"POST",body:{codigoComercio:codigo}});
+    unirseMsg=r.yaLaTenias?"Ya tenías esta tarjeta en tu billetera.":"¡Listo! Sumaste la tarjeta a tu billetera.";
+  }catch(x){if(x.status!==401&&x.status!==403)unirseMsg=x.message}
+}
+window.addEventListener("hashchange",()=>{leerEnlaceUnirse();if(unirse)modo("cli")});
+
+/* --- Mi QR --- */
+let miQr=null;
+function mostrarBotonQR(b){
+  miQr={codigo:b.codigoQr,nombre:b.nombre};
+  const cab=$("#billetera .row.between");
+  const btn=document.createElement("button");
+  btn.className="primary btn-qr";btn.id="ver-qr";btn.textContent="Mostrar mi QR";
+  cab.after(btn);
+  if(unirseMsg){const p=document.createElement("p");p.className="msg small";p.id="unirse-ok";p.textContent=unirseMsg;btn.after(p);unirseMsg=""}
+}
+let bloqueoPantalla=null;
+async function abrirMiQR(){
+  if(!miQr)return;
+  $("#capa-qr-nombre").textContent=miQr.nombre;
+  const lado=Math.min(window.innerWidth,window.innerHeight)*0.78;
+  dibujarQR(miQr.codigo,$("#capa-qr-canvas"),Math.max(200,Math.min(420,Math.floor(lado))));
+  $("#capa-qr").hidden=false;
+  // Que la pantalla no se apague mientras lo muestra.
+  try{bloqueoPantalla=await navigator.wakeLock?.request("screen")}catch{}
+}
+function cerrarMiQR(){$("#capa-qr").hidden=true;try{bloqueoPantalla?.release()}catch{}bloqueoPantalla=null}
+$("#capa-qr-cerrar").onclick=cerrarMiQR;
+document.addEventListener("click",e=>{if(e.target.closest("#ver-qr"))abrirMiQR()});
+
+/* --- Escáner de la caja ---
+   Usa BarcodeDetector cuando el navegador lo trae (Chrome/Android); si no (Safari, Firefox),
+   carga jsQR y lee cuadros del video en un canvas. */
+let detector=null, flujo=null, lazo=null;
+const lienzo=document.createElement("canvas");
+function cargarJsQR(){
+  if(window.jsQR)return Promise.resolve();
+  return new Promise((ok,mal)=>{const s=document.createElement("script");s.src="/lib/jsQR.min.js";s.onload=ok;s.onerror=()=>mal(new Error("No se pudo cargar el lector de QR."));document.head.appendChild(s)});
+}
+async function prepararLector(){
+  if(detector!==null)return;
+  try{
+    if("BarcodeDetector" in window&&(await BarcodeDetector.getSupportedFormats()).includes("qr_code")){detector=new BarcodeDetector({formats:["qr_code"]});return}
+  }catch{}
+  detector=false;await cargarJsQR();
+}
+/** Lee un QR de un video, imagen o canvas. Devuelve el texto o null. */
+async function decodificarCuadro(fuente){
+  await prepararLector();
+  if(detector){const r=await detector.detect(fuente);return r.length?r[0].rawValue:null}
+  const w=fuente.videoWidth||fuente.naturalWidth||fuente.width, h=fuente.videoHeight||fuente.naturalHeight||fuente.height;
+  if(!w||!h)return null;
+  const factor=Math.min(1,640/Math.max(w,h));   // achicar cuadros grandes: más rápido y igual de legible
+  lienzo.width=Math.round(w*factor);lienzo.height=Math.round(h*factor);
+  const ctx=lienzo.getContext("2d",{willReadFrequently:true});
+  ctx.drawImage(fuente,0,0,lienzo.width,lienzo.height);
+  const img=ctx.getImageData(0,0,lienzo.width,lienzo.height);
+  const r=jsQR(img.data,img.width,img.height,{inversionAttempts:"dontInvert"});
+  return r?r.data:null;
+}
+window.decodificarCuadro=decodificarCuadro;
+async function abrirEscaner(){
+  const estado=$("#scan-estado");estado.textContent="";
+  if(!navigator.mediaDevices?.getUserMedia){
+    err("#com-found","Este navegador no deja usar la cámara acá (hace falta HTTPS). Buscá por DNI o teléfono.");return;
+  }
+  $("#capa-scan").hidden=false;estado.textContent="Abriendo la cámara…";
+  try{
+    await prepararLector();
+    flujo=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+  }catch(x){
+    cerrarEscaner();
+    const m=x.name==="NotAllowedError"||x.name==="SecurityError"?"No diste permiso para usar la cámara. Habilitalo en el navegador o buscá por DNI o teléfono."
+      :x.name==="NotFoundError"?"No encontramos ninguna cámara. Buscá por DNI o teléfono."
+      :"No se pudo abrir la cámara. Buscá por DNI o teléfono.";
+    err("#com-found",m);return;
+  }
+  const v=$("#scan-video");v.srcObject=flujo;await v.play().catch(()=>{});
+  estado.textContent="Buscando un QR…";
+  let ocupado=false;
+  lazo=setInterval(async()=>{
+    if(ocupado||v.readyState<2)return;ocupado=true;
+    try{
+      const texto=await decodificarCuadro(v);
+      if(texto)usarLectura(texto);
+    }catch{}finally{ocupado=false}
+  },250);
+}
+function cerrarEscaner(){
+  clearInterval(lazo);lazo=null;
+  flujo?.getTracks().forEach(t=>t.stop());flujo=null;
+  const v=$("#scan-video");v.srcObject=null;
+  $("#capa-scan").hidden=true;
+}
+function usarLectura(texto){
+  cerrarEscaner();
+  if(/#unirse=/.test(texto)){err("#com-found","Ese es el QR de un comercio. Pedile al cliente el QR de su billetera (botón «Mostrar mi QR»).");return}
+  $("#com-q").value=texto.trim();
+  $("#com-buscar").requestSubmit();
+}
+$("#com-escanear").onclick=abrirEscaner;
+$("#scan-cerrar").onclick=cerrarEscaner;
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("#capa-scan").hidden)cerrarEscaner();if(!$("#capa-qr").hidden)cerrarMiQR()}});
+
+/* --- Cartel del mostrador --- */
+$("#com-cartel").onclick=async()=>{
+  err("#cartel-msg");
+  try{
+    const c=(await api("/comercios")).find(x=>x.id===yo.comercioId);
+    if(!c)throw new Error("No encontramos tu comercio en el directorio.");
+    location.href="/cartel.html?c="+encodeURIComponent(c.codigo);
+  }catch(x){err("#cartel-msg",x.message)}
+};
+
+/* --- App instalable --- */
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1")){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
+}
+
+/* --- Arranque --- */
+leerEnlaceUnirse();
+// El link del email trae #restablecer=TOKEN: abre directo la pantalla para crear la contraseña.
+if(location.hash.startsWith("#restablecer=")){
+  tokenRestablecer=decodeURIComponent(location.hash.slice("#restablecer=".length));
+  tokCom=null;guardar("tokCom",null);modo("com");pantallaAcceso("#com-restablecer");
+}else modo("cli");
 </script>
 </body>
 </html>
