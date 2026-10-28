@@ -108,6 +108,21 @@ chk "5to intento fallido -> 429" 429 $(code -X POST -H "$J" -d '{"telefono":"118
 for i in 1 2 3 4 5; do code -X POST -H "$J" -d '{"email":"barberia@demo.com","contrasena":"mala1234"}' $B/auth/comercios/login >/dev/null; done
 chk "barbería bloqueada tras 5 fallos (aun con la buena) -> 429" 429 $(code -X POST -H "$J" -d '{"email":"barberia@demo.com","contrasena":"Demo1234"}' $B/auth/comercios/login); echo "     $(body)"
 
+echo "== Contraseñas (verdulería)"
+chk "verdulería sesión A" 200 $(code -X POST -H "$J" -d '{"email":"verduleria@demo.com","contrasena":"Demo1234"}' $B/auth/comercios/login); VA=$(tok)
+chk "verdulería sesión B" 200 $(code -X POST -H "$J" -d '{"email":"verduleria@demo.com","contrasena":"Demo1234"}' $B/auth/comercios/login); VB=$(tok)
+chk "cambiar con la actual mala -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $VA" -d '{"actual":"mala1234","nueva":"Verdu2026"}' $B/auth/contrasena)
+chk "cambiar sin login -> 401" 401 $(code -X POST -H "$J" -d '{"actual":"Demo1234","nueva":"Verdu2026"}' $B/auth/contrasena)
+chk "cambiar bien" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $VA" -d '{"actual":"Demo1234","nueva":"Verdu2026"}' $B/auth/contrasena)
+chk "la otra sesión quedó cerrada -> 401" 401 $(code -H "Authorization: Bearer $VB" $B/comercios/4/resumen)
+chk "la sesión que hizo el cambio sigue" 200 $(code -H "Authorization: Bearer $VA" $B/comercios/4/resumen)
+chk "login con la vieja -> 401" 401 $(code -X POST -H "$J" -d '{"email":"verduleria@demo.com","contrasena":"Demo1234"}' $B/auth/comercios/login)
+chk "login con la nueva" 200 $(code -X POST -H "$J" -d '{"email":"verduleria@demo.com","contrasena":"Verdu2026"}' $B/auth/comercios/login)
+chk "olvidé (email existente)" 200 $(code -X POST -H "$J" -d '{"email":"verduleria@demo.com"}' $B/auth/comercios/olvide); MSG1=$(campo .mensaje)
+chk "olvidé (email inexistente)" 200 $(code -X POST -H "$J" -d '{"email":"nadie@demo.com"}' $B/auth/comercios/olvide); MSG2=$(campo .mensaje)
+chk "olvidé responde igual exista o no" si $([ -n "$MSG1" ] && [ "$MSG1" == "$MSG2" ] && echo si || echo no)
+chk "restablecer con token inventado -> 400" 400 $(code -X POST -H "$J" -d '{"token":"tokeninventadotokeninventado123","nueva":"Otra2026"}' $B/auth/comercios/restablecer)
+
 echo "== Registro de comercio y salir"
 chk "registro comercio" 201 $(code -X POST -H "$J" -d '{"nombreComercio":"Café Tostado","rubro":"Cafetería","direccion":"Mitre 100","nombreDueno":"Leo","email":"leo@nuevo.com","contrasena":"Leo12345"}' $B/auth/comercios/registro); NUEVO=$(tok); NID=$(campo .comercioId)
 chk "código único del QR" "cafe-tostado-2" $(curl -s $B/comercios | jq -r '.[] | select(.codigo=="cafe-tostado-2") | .codigo')

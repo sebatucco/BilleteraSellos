@@ -1,7 +1,10 @@
 # --- Compilación ---
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-# Primero solo el .csproj, para que la descarga de paquetes quede en caché entre builds.
+# Primero solo los .csproj, para que la descarga de paquetes quede en caché entre builds.
+COPY src/BilleteraSellos.Dominio/BilleteraSellos.Dominio.csproj src/BilleteraSellos.Dominio/
+COPY src/BilleteraSellos.Aplicacion/BilleteraSellos.Aplicacion.csproj src/BilleteraSellos.Aplicacion/
+COPY src/BilleteraSellos.Infraestructura/BilleteraSellos.Infraestructura.csproj src/BilleteraSellos.Infraestructura/
 COPY src/BilleteraSellos.Api/BilleteraSellos.Api.csproj src/BilleteraSellos.Api/
 RUN dotnet restore src/BilleteraSellos.Api/BilleteraSellos.Api.csproj
 COPY src/ src/

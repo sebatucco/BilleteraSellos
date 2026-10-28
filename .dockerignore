@@ -3,9 +3,12 @@
 **/*.db
 **/*.db-shm
 **/*.db-wal
+**/TestResults/
 .git/
 .github/
 .vs/
 .vscode/
 *.md
 pruebas/
+tests/
+resultados-tests/

@@ -1,5 +1,7 @@
 # Todo local con PostgreSQL:   docker compose up --build
 # Después abrí http://localhost:5225 (con los datos de ejemplo, igual que con dotnet run).
+# La API aplica las migraciones al arrancar. Si tenés un volumen de una versión anterior (creado sin migraciones),
+# borralo una vez con:   docker compose down -v
 services:
   db:
     image: postgres:16

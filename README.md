@@ -35,7 +35,7 @@ Después abrí en el navegador:
 - **http://localhost:5225** → la app: modo Cliente y modo Comercio.
 - **http://localhost:5225/swagger** → todos los endpoints para probarlos uno por uno.
 
-En Visual Studio: abrí `BilleteraSellos.sln` y apretá F5.
+En Visual Studio: abrí `BilleteraSellos.sln`, verificá que el proyecto de inicio sea **BilleteraSellos.Api** (clic derecho sobre él → **Establecer como proyecto de inicio**) y apretá F5.
 
 ### Para probar
 
@@ -83,26 +83,36 @@ Los navegadores solo dejan usar la cámara (y el service worker) en **HTTPS** o 
 ## 3. Cómo está armado
 
 ```
-src/BilleteraSellos.Api/
-  Dominio/Entidades.cs        Comercio, ProgramaSellos, Cliente, Tarjeta, Movimiento, Canje, Aviso
-  Dominio/Seguridad.cs        Usuario (dueño/cajero), Sesion, CodigoVerificacion
-  Seguridad/Autenticacion.cs  Contraseñas, tokens, sesiones y permisos por comercio
-  Seguridad/CodigosSms.cs     Códigos de verificación por SMS
-  Seguridad/Envios.cs         Envío por Twilio (SMS/WhatsApp) y SMTP, o consola en desarrollo
-  Endpoints/AuthEndpoints.cs  Login, registro de comercios, equipo
-  Endpoints/ContrasenaEndpoints.cs  Cambiar y recuperar contraseña
-  Datos/AppDbContext.cs       Acceso a la base (EF Core)
-  Datos/DatosDemo.cs          Datos de ejemplo (solo en Development)
-  Servicios/Reglas.cs         Niveles, clientes que se enfrían, calculadora de costo, códigos
-  Servicios/Avisos.cs         Canal de avisos (hoy: consola) y hora local de Argentina
-  Endpoints/ComercioEndpoints.cs   Lo que usa la caja
-  Endpoints/ClienteEndpoints.cs    Lo que usa la billetera
-  Tareas/AvisosAutomaticos.cs      Cumpleaños y reactivación, una vez por día
-  wwwroot/index.html               Pantalla de prueba (billetera y panel)
-  wwwroot/cartel.html              Cartel imprimible con el QR del comercio
-  wwwroot/js/qr.js                 Dibujo de QR
-  wwwroot/sw.js, manifest.json     App instalable (PWA)
-  wwwroot/lib, wwwroot/iconos      Librerías de QR e íconos de la app
+BilleteraSellos.sln
+src/
+  BilleteraSellos.Dominio/          El negocio, sin dependencias externas
+    Comun/Resultado.cs                Resultado y Error (validación, no encontrado, conflicto...)
+    Entidades/                        Comercio, ProgramaSellos, Cliente, Tarjeta, Canje, Usuario, Sesion...
+                                      con sus reglas: tarjeta.SumarSello(), tarjeta.Canjear(), usuario.RegistrarFalla()...
+    Reglas/                           Funciones puras: niveles, clientes que se enfrían, costo del premio,
+                                      teléfonos, emails, contraseñas, cumpleaños, códigos
+  BilleteraSellos.Aplicacion/       Los casos de uso (CQRS)
+    Abstracciones/                    IAppDbContext, IReloj, INotificador, IEnviadorCodigos, IEnviadorEmail, IHasherContrasenas
+    Mensajeria/                       ICommand, IQuery y sus handlers (sin MediatR)
+    Seguridad/                        Tokens y sesiones
+    Funcionalidades/                  Un archivo por caso de uso, agrupados por área:
+      Acceso/                           login, registro de comercio, códigos SMS, contraseñas
+      Equipo/                           cajeros del comercio
+      Comercios/                        caja y panel: sumar sello, entregar premio, resumen, clientes en riesgo...
+      Billetera/                        registro del cliente, billetera, sumar tarjeta, canjear
+      Avisos/                           cumpleaños y "te extrañamos"
+  BilleteraSellos.Infraestructura/  Lo que habla con el mundo de afuera
+    Persistencia/                     AppDbContext (EF Core), configuraciones, migraciones, datos demo, DATABASE_URL
+    Servicios/                        Reloj, hash de contraseñas, Twilio, SMTP, consola
+  BilleteraSellos.Api/              La puerta de entrada HTTP
+    Endpoints/                        Rutas finitas: arman el comando, llaman al handler y devuelven la respuesta
+    Seguridad/                        Lectura del token, políticas por rol, "solo tu comercio"
+    Tareas/AvisosAutomaticos.cs       Proceso diario en segundo plano
+    wwwroot/                          Billetera y panel de prueba (PWA), cartel del mostrador
+tests/
+  BilleteraSellos.Dominio.Tests/    Tests unitarios de las reglas y entidades
+  BilleteraSellos.Aplicacion.Tests/ Tests de los casos de uso contra SQLite en memoria
+pruebas/humo.sh                     Prueba de punta a punta de la API (la corre el CI)
 ```
 
 ### Reglas de negocio ya implementadas
@@ -113,17 +123,74 @@ src/BilleteraSellos.Api/
 | El cajero da de alta a quien no tiene la app | `POST /api/comercios/{id}/clientes` |
 | Buscar en la caja por DNI, teléfono (con o sin +54 9) o QR | `GET /api/comercios/{id}/clientes/buscar` |
 | La tarjeta se crea sola con el primer sello | `POST /api/comercios/{id}/sellos` |
-| No se puede sellar dos veces seguidas (horas configurables) | `ProgramaSellos.HorasEntreSellos` |
+| No se puede sellar dos veces seguidas (horas configurables) | `Tarjeta.SumarSello()` y `ProgramaSellos.HorasEntreSellos` |
 | Tarjeta completa: no suma más hasta canjear | `POST /api/comercios/{id}/sellos` |
 | Canje con código de 6 caracteres, sin letras confusas, con vencimiento | `POST /api/billetera/tarjetas/{tarjetaId}/canjear` |
 | El código solo sirve en su comercio y una sola vez | `POST /api/comercios/{id}/canjes/{codigo}/entregar` |
-| Niveles Bronce (0), Plata (10), Oro (30 sellos) por comercio | `Servicios/Reglas.cs` → `Niveles` |
+| Niveles Bronce (0), Plata (10), Oro (30 sellos) por comercio | `Dominio/Reglas` → `Niveles` |
 | Clientes en riesgo según su propio ritmo (2x = riesgo, 3x = crítico) | `GET /api/comercios/{id}/clientes-en-riesgo` |
 | Calculadora de costo del premio | `GET /api/comercios/{id}/costo-premio` |
 | Cumpleaños próximos | `GET /api/comercios/{id}/cumpleanos` |
-| Saludo de cumpleaños y "te extrañamos", sin repetir en 14 días | `Tareas/AvisosAutomaticos.cs` |
+| Saludo de cumpleaños y "te extrañamos", sin repetir en 14 días | `Aplicacion/Funcionalidades/Avisos` (lo dispara `Api/Tareas/AvisosAutomaticos.cs`) |
 | El cliente acepta o no promos de cada comercio | `PUT /api/billetera/tarjetas/{tarjetaId}/promos` |
 | Reseña de Google como link, sin premio a cambio | `Comercio.ResenaGoogleUrl` |
+
+## Arquitectura
+
+El proyecto sigue **Clean Architecture** con **CQRS**, en una versión liviana pensada para un equipo chico.
+
+### Las cuatro capas y la regla de dependencias
+
+```
+Api  ──►  Infraestructura  ──►  Aplicacion  ──►  Dominio
+```
+
+Cada capa solo conoce a las de su derecha. El **Dominio** no conoce a nadie: no sabe que existe una base de datos, HTTP ni Twilio.
+
+- **Dominio:** las entidades con su comportamiento y las reglas del negocio. Por ejemplo, `Tarjeta.SumarSello()` decide si la tarjeta está completa o si pasó poco tiempo desde el último sello. Las operaciones que pueden fallar devuelven un `Resultado` con un `Error` tipado en vez de tirar excepciones.
+- **Aplicación:** los casos de uso. Cada uno es un comando (cambia algo) o una consulta (solo lee) con su handler. Acá se orquesta: buscar en la base, llamar al dominio, guardar, mandar el aviso. Lo externo se usa a través de interfaces (`IAppDbContext`, `IEnviadorCodigos`, etc.).
+- **Infraestructura:** las implementaciones concretas de esas interfaces: EF Core, Twilio, SMTP, el reloj, el hash de contraseñas.
+- **Api:** recibe el pedido HTTP, arma el comando con los datos de la ruta y del usuario logueado, llama al handler y traduce el `Resultado` a la respuesta (400, 404, 409, etc. con `{ "error": "..." }`). No tiene lógica de negocio.
+
+### CQRS sin MediatR
+
+Los comandos y consultas son records que implementan `ICommand<T>` o `IQuery<T>`, y cada uno tiene su handler (`ICommandHandler<,>` / `IQueryHandler<,>`). No se usa MediatR (desde 2025 tiene licencia comercial) ni ninguna otra librería: los handlers se registran solos al arrancar, escaneando el proyecto de Aplicación, y cada endpoint inyecta directamente el handler que necesita. Es explícito y fácil de seguir con "Ir a definición".
+
+Para agregar un caso de uso nuevo: crear el archivo en `Funcionalidades/<Área>/`, con el comando o consulta, sus DTOs y el handler, y mapear el endpoint en `Api/Endpoints`. No hay que registrar nada a mano.
+
+### EF Core para escribir y para leer
+
+- **Comandos:** EF Core con seguimiento de cambios y transacciones. El mismo código funciona en SQLite (desarrollo) y PostgreSQL (producción).
+- **Consultas:** también EF Core, con `AsNoTracking()` y proyecciones directas a los DTOs, que para este volumen de datos es igual de rápido.
+- **Cuándo sumar Dapper:** si aparece una consulta pesada de verdad (por ejemplo, reportes de muchos meses para comercios grandes) se puede escribir solo esa consulta con SQL a mano y Dapper, dentro de su handler. Como las consultas ya están separadas de los comandos, el cambio no toca nada más.
+- La capa de Aplicación usa `IAppDbContext` (las tablas de EF) en lugar de un repositorio por entidad: EF ya cumple ese rol y así se evita código repetido.
+
+### Migraciones
+
+La base de PostgreSQL se crea y se actualiza con **migraciones de EF Core**, que están en `src/BilleteraSellos.Infraestructura/Persistencia/Migraciones`. La API las aplica sola al arrancar. Con SQLite (tu PC) la base se crea directo desde el modelo y, en desarrollo, se recrea si quedó vieja.
+
+Cuando cambies una entidad o una configuración, creá una migración nueva:
+
+- **Visual Studio:** menú **Herramientas → Administrador de paquetes NuGet → Consola del Administrador de paquetes**, y ahí:
+  ```
+  Add-Migration NombreDelCambio -Project BilleteraSellos.Infraestructura -StartupProject BilleteraSellos.Api
+  ```
+- **Línea de comandos** (una sola vez `dotnet tool install --global dotnet-ef --version 8.0.10`):
+  ```
+  dotnet ef migrations add NombreDelCambio --project src/BilleteraSellos.Infraestructura --startup-project src/BilleteraSellos.Api --output-dir Persistencia/Migraciones
+  ```
+- **Sin instalar nada:** subí tus cambios a la rama `generar-migracion` (opcionalmente con el nombre en `pruebas/nombre-migracion.txt`). GitHub genera la migración y la commitea en esa rama (`.github/workflows/generar-migracion.yml`).
+
+Las migraciones se generan para PostgreSQL. El CI falla si alguien cambia el modelo y se olvida de la migración.
+
+### Tests
+
+- `tests/BilleteraSellos.Dominio.Tests`: reglas y entidades, sin base de datos. Son instantáneos.
+- `tests/BilleteraSellos.Aplicacion.Tests`: casos de uso de punta a punta contra SQLite en memoria, con dobles para el reloj, el SMS y el email.
+
+En **Visual Studio**: menú **Prueba → Explorador de pruebas** y **Ejecutar todas las pruebas** (Ctrl+R, A). Por línea de comandos: `dotnet test`.
+
+Además, `pruebas/humo.sh` prueba la API completa desde afuera (ver "Integración continua").
 
 ## Configurar SMS y email
 
@@ -209,16 +276,17 @@ En **Render** es igual: **New** → **Web Service** desde el repo (detecta el Do
 **Importante antes de lanzar:**
 
 - En producción **no se cargan los datos de ejemplo** ni existe Swagger: la base arranca vacía y los comercios se registran con `POST /api/auth/comercios/registro`.
-- La base se crea sola la primera vez (`EnsureCreated`). Eso sirve para probar, pero **no actualiza tablas existentes**: si cambia el modelo, la base de producción queda desfasada. Antes de tener clientes reales hay que pasar a migraciones (punto 2 de la lista de abajo).
+- La base de PostgreSQL se crea y se actualiza sola al arrancar, con las migraciones (ver "Migraciones" en Arquitectura). Si el servidor ya tenía una base creada por una versión anterior sin migraciones, borrala una vez antes de publicar.
 - Mientras los códigos se escriban en la consola, en producción nadie recibe el SMS: hace falta el proveedor de SMS (punto 1).
 
 ### Integración continua
 
 Cada push y cada pull request corren en GitHub Actions (`.github/workflows/ci.yml`):
 
-- compila en Release con los paquetes reales,
-- levanta la API con SQLite y corre la prueba de humo `pruebas/humo.sh` (login, permisos entre comercios, roles, sellos, canjes, códigos, bloqueos),
-- repite la prueba contra un PostgreSQL 16 real, conectando con `DATABASE_URL`,
+- compila la solución en Release con los paquetes reales y corre los tests unitarios (los resultados quedan como artifact `resultados-tests`),
+- revisa que no haya cambios del modelo sin migración (`dotnet ef migrations has-pending-model-changes`),
+- levanta la API con SQLite y corre la prueba de humo `pruebas/humo.sh` (login, permisos entre comercios, roles, sellos, canjes, códigos, bloqueos, contraseñas),
+- repite la prueba contra un PostgreSQL 16 real, conectando con `DATABASE_URL` y aplicando las migraciones sobre una base vacía,
 - construye la imagen Docker y verifica que responde en `/salud`.
 
 Para correr la prueba de humo en tu PC, con la API levantada en Development y la base recién creada:
@@ -234,14 +302,9 @@ bash pruebas/humo.sh http://localhost:5225
 En este orden:
 
 1. **Cuentas de Twilio y SMTP.** El código ya está (ver "Configurar SMS y email"): falta crear las cuentas, cargar las claves en el servidor y probar con un celular real. Al publicar, configurar también `Cors:OrigenesPermitidos` y `UrlPublica` con el dominio real y servir todo por HTTPS.
-2. **Migraciones de EF Core** en lugar de `EnsureCreated`, para cambiar el modelo sin perder datos:
-   ```
-   dotnet tool install --global dotnet-ef
-   dotnet ef migrations add Inicial
-   ```
-   Y en `Program.cs` cambiar `EnsureCreatedAsync()` por `MigrateAsync()`.
+2. ~~Migraciones de EF Core~~ Hechas: ver "Migraciones" en Arquitectura.
 3. **Avisos reales.** Reemplazar `NotificadorConsola` por una implementación de `INotificador`:
    tarjetas de Google Wallet y Apple Wallet (avisos gratis en la pantalla bloqueada), y WhatsApp solo para lo que lo justifique.
-4. **Billetera instalable.** Convertir la pantalla en PWA (manifest + service worker) o pasar a Blazor/.NET MAUI.
+4. ~~Billetera instalable~~ Hecha como PWA. Más adelante, si hace falta, app nativa con .NET MAUI.
 5. **Datos personales.** Términos, política de privacidad y consentimiento explícito al registrarse. En Argentina rige la Ley 25.326 de Protección de Datos Personales; conviene consultarlo con un profesional antes de lanzar.
 6. **Hosting:** ya está preparado (Docker, `DATABASE_URL`, `PORT`, `/salud`, https detrás del proxy). Los pasos están en la sección 6.
