@@ -1,28 +1,19 @@
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
-using BilleteraSellos.Api.Datos;
 using BilleteraSellos.Api.Endpoints;
-using BilleteraSellos.Api.Seguridad;
-using BilleteraSellos.Api.Servicios;
 using BilleteraSellos.Api.Tareas;
+using BilleteraSellos.Aplicacion.Funcionalidades.Avisos;
+using BilleteraSellos.Aplicacion.Mensajeria;
+using BilleteraSellos.Infraestructura;
+using BilleteraSellos.Infraestructura.Persistencia;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models; // swagger
 
+// Composición de la app: acá se juntan las capas. La lógica del negocio está en Dominio y Aplicacion.
 var builder = WebApplication.CreateBuilder(args);
 
-// Base de datos: SQLite para desarrollar en tu PC, PostgreSQL en el servidor.
-var proveedor = builder.Configuration["BaseDeDatos:Proveedor"] ?? "Sqlite";
-var conexion = builder.Configuration.GetConnectionString("Principal") ?? "Data Source=billetera.db";
-
 // --- Publicación (hosting) ---
-// Railway/Render/Heroku dan la base en DATABASE_URL: si existe, manda sobre la configuración.
-if (builder.Configuration["DATABASE_URL"] is { Length: > 0 } urlBase)
-{
-    proveedor = "Postgres";
-    conexion = ConexionBase.DesdeUrl(urlBase);
-}
 // El hosting indica en PORT el puerto en el que tiene que escuchar la app.
 if (builder.Configuration["PORT"] is { Length: > 0 } puerto && int.TryParse(puerto, out var nroPuerto))
     builder.WebHost.UseUrls($"http://0.0.0.0:{nroPuerto}");
@@ -39,22 +30,14 @@ if (confiarEnProxy)
     });
 }
 // --- fin publicación ---
-builder.Services.AddDbContext<AppDbContext>(o =>
-{
-    if (proveedor.Equals("Postgres", StringComparison.OrdinalIgnoreCase)) o.UseNpgsql(conexion);
-    else o.UseSqlite(conexion);
-});
 
-builder.Services.AddSingleton<RelojLocal>();
-builder.Services.AddSingleton<INotificador, NotificadorConsola>();
-builder.Services.AddScoped<ProcesadorAvisos>();
+// Capas: casos de uso (handlers) e infraestructura (base de datos, SMS, email, reloj, contraseñas).
+builder.Services.AddAplicacion();
+builder.Services.AddInfraestructura(builder.Configuration);
 if (builder.Configuration.GetValue("Avisos:Activos", true))
     builder.Services.AddHostedService<AvisosAutomaticos>();
 
 // Login: tokens de sesión guardados (hasheados) en la base, revocables al instante.
-builder.Services.AddScoped<Sesiones>();
-builder.Services.AddScoped<CodigosVerificacion>();
-builder.AgregarEnvios(); // SMS (Consola/Twilio) y email (Consola/SMTP) según appsettings
 builder.Services.AddAuthentication(SesionHandler.Esquema)
     .AddScheme<AuthenticationSchemeOptions, SesionHandler>(SesionHandler.Esquema, null);
 builder.Services.AddAuthorization(o =>
@@ -94,24 +77,8 @@ builder.Services.AddSwaggerGen(o => // swagger
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    // Crea la base si no existe. Cuando el modelo se estabilice, pasar a migraciones (ver README).
-    await db.Database.EnsureCreatedAsync();
-    if (app.Environment.IsDevelopment())
-    {
-        // Si la base de desarrollo es de una versión anterior (sin las tablas nuevas), se recrea con los datos de ejemplo.
-        try { await db.Usuarios.AnyAsync(); await db.TokensRestablecimiento.AnyAsync(); }
-        catch (Exception)
-        {
-            app.Logger.LogWarning("La base de desarrollo era de una versión anterior: se recrea con datos de ejemplo.");
-            await db.Database.EnsureDeletedAsync();
-            await db.Database.EnsureCreatedAsync();
-        }
-        await DatosDemo.CargarAsync(db);
-    }
-}
+// PostgreSQL: aplica migraciones. SQLite: crea la base. En desarrollo carga los datos de ejemplo.
+await InicializadorBase.InicializarAsync(app.Services, app.Environment.IsDevelopment());
 
 if (app.Environment.IsDevelopment())
 {
@@ -119,7 +86,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(); // swagger
 
     // Para probar los avisos sin esperar a la hora programada.
-    app.MapPost("/api/avisos/procesar", (ProcesadorAvisos p) => p.ProcesarAsync()).WithTags("Desarrollo");
+    app.MapPost("/api/avisos/procesar", (ProcesarAvisosHandler h, CancellationToken ct) => h.Handle(new ProcesarAvisos(), ct)).WithTags("Desarrollo");
 }
 
 // --- Publicación (hosting) ---
@@ -138,7 +105,7 @@ app.MapGet("/salud", async (AppDbContext db, CancellationToken ct) =>
     .WithTags("Desarrollo").ExcludeFromDescription();
 // --- fin publicación ---
 
-app.AvisarSiEnviosDeConsola();
+AvisarSiEnviosDeConsola(app);
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseCors();
@@ -146,11 +113,21 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapAuthEndpoints();
-app.MapContrasenaEndpoints();
+app.MapAccesoEndpoints();
+app.MapEquipoEndpoints();
 app.MapComercioEndpoints();
-app.MapClienteEndpoints();
+app.MapBilleteraEndpoints();
 
 app.Run();
+
+/// <summary>En producción avisa si los códigos o emails solo salen por consola (nadie los recibiría).</summary>
+static void AvisarSiEnviosDeConsola(WebApplication app)
+{
+    if (app.Environment.IsDevelopment()) return;
+    if ((app.Configuration["Sms:Proveedor"] ?? "Consola").Equals("Consola", StringComparison.OrdinalIgnoreCase))
+        app.Logger.LogWarning("Sms:Proveedor es Consola: los clientes NO van a recibir el código. Configurá Twilio.");
+    if ((app.Configuration["Email:Proveedor"] ?? "Consola").Equals("Consola", StringComparison.OrdinalIgnoreCase))
+        app.Logger.LogWarning("Email:Proveedor es Consola: los emails de recuperar contraseña NO se envían. Configurá SMTP.");
+}
 
 public partial class Program { }

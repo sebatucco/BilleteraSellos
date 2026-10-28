@@ -7,6 +7,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C3F43D45-579
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BilleteraSellos.Api", "src\BilleteraSellos.Api\BilleteraSellos.Api.csproj", "{0E38F930-97CB-4872-83FC-067B3EF296AD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BilleteraSellos.Dominio", "src\BilleteraSellos.Dominio\BilleteraSellos.Dominio.csproj", "{A6ED3785-4FD1-4E8D-BC78-2763C1D817C2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BilleteraSellos.Aplicacion", "src\BilleteraSellos.Aplicacion\BilleteraSellos.Aplicacion.csproj", "{D86AEACB-8E23-43BE-9100-29409D3767EA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BilleteraSellos.Infraestructura", "src\BilleteraSellos.Infraestructura\BilleteraSellos.Infraestructura.csproj", "{24C37DE4-3FDA-4A54-A445-236DE4CDE103}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{ACD96217-DC06-4D0A-96EF-27F4CC519BF8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,8 +28,23 @@ Global
 		{0E38F930-97CB-4872-83FC-067B3EF296AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0E38F930-97CB-4872-83FC-067B3EF296AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0E38F930-97CB-4872-83FC-067B3EF296AD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A6ED3785-4FD1-4E8D-BC78-2763C1D817C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A6ED3785-4FD1-4E8D-BC78-2763C1D817C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A6ED3785-4FD1-4E8D-BC78-2763C1D817C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A6ED3785-4FD1-4E8D-BC78-2763C1D817C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D86AEACB-8E23-43BE-9100-29409D3767EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D86AEACB-8E23-43BE-9100-29409D3767EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D86AEACB-8E23-43BE-9100-29409D3767EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D86AEACB-8E23-43BE-9100-29409D3767EA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{24C37DE4-3FDA-4A54-A445-236DE4CDE103}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{24C37DE4-3FDA-4A54-A445-236DE4CDE103}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{24C37DE4-3FDA-4A54-A445-236DE4CDE103}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{24C37DE4-3FDA-4A54-A445-236DE4CDE103}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{0E38F930-97CB-4872-83FC-067B3EF296AD} = {C3F43D45-579F-4643-B63E-7847FDA55D85}
+		{A6ED3785-4FD1-4E8D-BC78-2763C1D817C2} = {C3F43D45-579F-4643-B63E-7847FDA55D85}
+		{D86AEACB-8E23-43BE-9100-29409D3767EA} = {C3F43D45-579F-4643-B63E-7847FDA55D85}
+		{24C37DE4-3FDA-4A54-A445-236DE4CDE103} = {C3F43D45-579F-4643-B63E-7847FDA55D85}
 	EndGlobalSection
 EndGlobal
