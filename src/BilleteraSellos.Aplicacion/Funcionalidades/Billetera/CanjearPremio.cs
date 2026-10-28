@@ -10,11 +10,13 @@ public sealed class CanjearPremioHandler(IAppDbContext db, IReloj reloj) : IComm
         var t = await db.Tarjetas.Include(x => x.Comercio).ThenInclude(co => co!.Programa)
             .FirstOrDefaultAsync(x => x.Id == c.TarjetaId && x.ClienteId == c.ClienteId, ct);
         if (t is null) return Error.NoEncontrado("Esa tarjeta no está en tu billetera.");
+        var programa = t.Comercio!.Programa!;
+        if (t.PuedeCanjear(programa) is { Exito: false } no) return no.Error!;
 
         string codigo;
         do codigo = Codigos.Generar(); while (await db.Canjes.AnyAsync(k => k.Codigo == codigo, ct));
 
-        var canje = t.Canjear(t.Comercio!.Programa!, codigo, reloj.UtcAhora);
+        var canje = t.Canjear(programa, codigo, reloj.UtcAhora);
         if (!canje.Exito) return canje.Error!;
         await db.SaveChangesAsync(ct);
         return new CanjePendiente(canje.Valor.Codigo, canje.Valor.Premio, canje.Valor.VenceEn);

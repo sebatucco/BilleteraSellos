@@ -268,6 +268,16 @@ public class CanjeTests
     }
 
     [Fact]
+    public void Entregar_en_el_instante_exacto_del_vencimiento_ya_no_vale_igual_que_EstaPendiente()
+    {
+        var c = CanjeNuevo(diasParaRetirar: 7);
+
+        Assert.False(c.EstaPendiente(c.VenceEn));
+        Assert.False(c.Entregar(c.VenceEn, "caja").Exito);
+        Assert.True(c.Entregar(c.VenceEn.AddTicks(-1), "caja").Exito);
+    }
+
+    [Fact]
     public void EstaPendiente_hasta_que_vence()
     {
         var c = CanjeNuevo(diasParaRetirar: 7);

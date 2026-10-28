@@ -72,10 +72,15 @@ public class Tarjeta
     }
 
     /// <summary>Canjea el premio: descuenta los sellos y genera el canje con el código para la caja.</summary>
+    /// <summary>Si se puede canjear el premio ahora. Sirve para no generar un código de canje en vano.</summary>
+    public Resultado PuedeCanjear(ProgramaSellos programa) =>
+        EstaCompleta(programa)
+            ? Resultado.Ok()
+            : Error.Conflicto($"Todavía te faltan {programa.SellosNecesarios - SellosActuales} sellos.");
+
     public Resultado<Canje> Canjear(ProgramaSellos programa, string codigo, DateTime ahora)
     {
-        if (!EstaCompleta(programa))
-            return Error.Conflicto($"Todavía te faltan {programa.SellosNecesarios - SellosActuales} sellos.");
+        if (PuedeCanjear(programa) is { Exito: false } no) return no.Error!;
 
         var canje = Canje.Nuevo(codigo, programa.Premio, ahora, ahora.AddDays(programa.DiasParaRetirar));
         SellosActuales -= programa.SellosNecesarios;
@@ -133,7 +138,8 @@ public class Canje
     public Resultado Entregar(DateTime ahora, string? entregadoPor)
     {
         if (EntregadoEn is not null) return Error.Conflicto($"Ese premio ya se entregó el {EntregadoEn:dd/MM HH:mm}.");
-        if (VenceEn < ahora) return Error.Conflicto($"El código venció el {VenceEn:dd/MM}.");
+        // Mismo criterio que EstaPendiente: en el instante exacto del vencimiento ya no vale.
+        if (VenceEn <= ahora) return Error.Conflicto($"El código venció el {VenceEn:dd/MM}.");
         EntregadoEn = ahora;
         EntregadoPor = entregadoPor;
         return Resultado.Ok();
