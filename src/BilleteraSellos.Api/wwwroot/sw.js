@@ -3,7 +3,7 @@
    - Las llamadas a /api NUNCA se guardan: tienen datos personales y tokens. Van siempre a la red,
      y si no hay conexión devuelven un error claro.
    Para publicar una versión nueva de la cáscara, cambiá VERSION. */
-const VERSION = "billetera-v2";
+const VERSION = "billetera-v3";
 const CASCARA = [
   "/",
   "/index.html",
