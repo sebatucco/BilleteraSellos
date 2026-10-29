@@ -38,17 +38,17 @@ public class TarjetaTests
     }
 
     [Fact]
-    public void SumarSello_con_tarjeta_completa_devuelve_conflicto()
+    public void SumarSello_con_tarjeta_completa_suma_igual_y_guarda_el_sobrante()
     {
         var p = Programa(sellos: 3, horasEntreSellos: 0);
         var t = TarjetaCon(3, p);
 
         var r = t.SumarSello(p, Ahora, "caja");
 
-        Assert.False(r.Exito);
-        Assert.Equal(TipoError.Conflicto, r.Error!.Tipo);
-        Assert.Equal("La tarjeta ya está completa. El cliente tiene que canjear el premio antes de sumar más sellos.", r.Error.Mensaje);
-        Assert.Equal(3, t.SellosActuales);
+        Assert.True(r.Exito);
+        Assert.Equal(4, t.SellosActuales);
+        Assert.True(t.EstaCompleta(p));
+        Assert.Equal(1, t.PremiosDisponibles(p));
     }
 
     [Fact]

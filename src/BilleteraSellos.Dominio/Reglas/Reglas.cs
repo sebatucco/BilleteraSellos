@@ -168,3 +168,11 @@ public static class CodigosComercio
         return codigo;
     }
 }
+
+/// <summary>Montos en pesos como se escriben en Argentina: $35.000 o $1.250,50. No depende de la cultura del servidor.</summary>
+public static class Pesos
+{
+    static readonly NumberFormatInfo Formato = new() { NumberGroupSeparator = ".", NumberDecimalSeparator = "," };
+
+    public static string Formatear(decimal monto) => "$" + monto.ToString("#,0.##", Formato);
+}

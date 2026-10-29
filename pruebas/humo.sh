@@ -14,7 +14,9 @@ R=$(mktemp)
 trap 'rm -f "$R"' EXIT
 pass=0; fail=0
 chk(){ # chk "descripcion" esperado obtenido
-  if [ "$2" == "$3" ]; then pass=$((pass+1)); echo "OK   $1"; else fail=$((fail+1)); echo "FAIL $1 (esperado $2, obtenido $3)"; echo "     respuesta: $(head -c 300 "$R")"; fi; }
+  if [ "$2" == "$3" ]; then pass=$((pass+1)); echo "OK   $1"; else fail=$((fail+1)); echo "FAIL $1 (esperado $2, obtenido $3)"; echo "     respuesta: $(head -c 300 "$R")"
+    # En GitHub Actions, cada falla queda además como anotación visible en el resumen del job.
+    [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=Prueba de humo::$1 (esperado $2, obtenido $3) $(head -c 200 "$R" | tr -d '\n')"; fi; }
 code(){ curl -s -o "$R" -w "%{http_code}" "$@"; }
 body(){ cat "$R"; }
 tok(){ jq -r '.token // empty' "$R"; }
@@ -86,14 +88,43 @@ code -X POST -H "$J" -d '{"telefono":"1170001111"}' $B/auth/clientes/codigo >/de
 chk "Pedro entra directo (sin registro)" 200 $(code -X POST -H "$J" -d "{\"telefono\":\"1170001111\",\"codigo\":\"$COD3\"}" $B/auth/clientes/verificar); echo "     $(body | grep -o '"requiereRegistro":[a-z]*')"
 
 echo "== Canje completo (barbería)"
+chk "la barbería saca la espera entre sellos" 200 $(code -X PUT -H "$J" -H "Authorization: Bearer $BARB" -d '{"sellosNecesarios":6,"premio":"Corte gratis","costoPremio":6000,"diasParaRetirar":7,"horasEntreSellos":0}' $B/comercios/2/programa)
 chk "dueño barbería suma el sello que completa a Lucía" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $BARB" -d '{"clienteId":1}' $B/comercios/2/sellos); chk "tarjeta completa" true $(campo .tarjetaCompleta)
-chk "no suma más con la tarjeta completa -> 409" 409 $(code -X POST -H "$J" -H "Authorization: Bearer $BARB" -d '{"clienteId":1}' $B/comercios/2/sellos)
+chk "con la tarjeta completa suma igual (el sobrante se guarda)" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $BARB" -d '{"clienteId":1}' $B/comercios/2/sellos); chk "quedan 7 sellos de 6" 7 $(campo .sellosActuales)
 code -H "Authorization: Bearer $LUCIA" $B/billetera >/dev/null; TB=$(campo '.tarjetas[] | select(.comercio=="Barbería Norte") | .tarjetaId')
 chk "Lucía canjea" 200 $(code -X POST -H "Authorization: Bearer $LUCIA" $B/billetera/tarjetas/$TB/canjear); CANJE=$(campo .codigo)
+code -H "Authorization: Bearer $LUCIA" $B/billetera >/dev/null
+chk "después del canje le queda 1 sello de sobrante" 1 $(campo '.tarjetas[] | select(.comercio=="Barbería Norte") | .sellosActuales')
 chk "Ana no puede canjear la tarjeta de Lucía -> 404" 404 $(code -X POST -H "Authorization: Bearer $ANA" $B/billetera/tarjetas/$TB/canjear)
 chk "el café no puede entregar un canje de la barbería -> 404" 404 $(code -X POST -H "Authorization: Bearer $DUENO" $B/comercios/1/canjes/$CANJE/entregar)
 chk "la barbería entrega el premio" 200 $(code -X POST -H "Authorization: Bearer $BARB" $B/comercios/2/canjes/$CANJE/entregar)
 chk "no se entrega dos veces -> 409" 409 $(code -X POST -H "Authorization: Bearer $BARB" $B/comercios/2/canjes/$CANJE/entregar)
+
+echo "== QR de la compra (Supermercado Gómez: 1 sello cada \$10.000, compra mínima \$5.000)"
+chk "dueño del súper entra" 200 $(code -X POST -H "$J" -d '{"email":"super@demo.com","contrasena":"Demo1234"}' $B/auth/comercios/login); SUPER=$(tok); SID=$(campo .comercioId)
+chk "cajera del súper entra" 200 $(code -X POST -H "$J" -d '{"email":"caja1@super.demo","contrasena":"Demo1234"}' $B/auth/comercios/login); CAJA1=$(tok)
+# Los decimales pueden venir como 10000 o 10000.00 según la base: se comparan como número.
+chk "el programa del súper tiene monto por sello" true $(code -H "Authorization: Bearer $SUPER" $B/comercios/$SID/programa >/dev/null; campo '.montoPorSello == 10000')
+chk "QR sin monto -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{}' $B/comercios/$SID/compras)
+chk "QR debajo de la compra mínima -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"monto":3000}' $B/comercios/$SID/compras)
+chk "QR con un monto absurdo -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"monto":35000000}' $B/comercios/$SID/compras)
+chk "la cajera genera el QR de \$35.000" 201 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"monto":35000}' $B/comercios/$SID/compras); QR=$(campo .codigo); chk "da 3 sellos" 3 $(campo .sellos)
+chk "el QR está pendiente" Pendiente $(code -H "Authorization: Bearer $CAJA1" $B/comercios/$SID/compras/$QR >/dev/null; campo .estado)
+chk "el café NO ve el QR del súper -> 403" 403 $(code -H "Authorization: Bearer $DUENO" $B/comercios/$SID/compras/$QR)
+chk "por la ruta del café el QR del súper no existe -> 404" 404 $(code -H "Authorization: Bearer $DUENO" $B/comercios/1/compras/$QR)
+chk "un comercio NO puede usar un QR como cliente -> 403" 403 $(code -X POST -H "Authorization: Bearer $SUPER" $B/billetera/compras/$QR)
+chk "Lucía escanea el QR" 200 $(code -X POST -H "Authorization: Bearer $LUCIA" $B/billetera/compras/$QR); chk "suma 3 sellos" 3 $(campo .sellosSumados); chk "tarjeta nueva del súper" true $(campo .tarjetaNueva)
+chk "la caja ve que se usó" Usada $(code -H "Authorization: Bearer $CAJA1" $B/comercios/$SID/compras/$QR >/dev/null; campo .estado); chk "y quién lo usó" "Lucía F." "$(campo .cliente)"
+chk "el mismo QR no sirve dos veces -> 409" 409 $(code -X POST -H "Authorization: Bearer $ANA" $B/billetera/compras/$QR)
+chk "un QR usado no se puede anular -> 409" 409 $(code -X POST -H "Authorization: Bearer $CAJA1" $B/comercios/$SID/compras/$QR/anular)
+chk "un QR inventado no existe -> 404" 404 $(code -X POST -H "Authorization: Bearer $LUCIA" $B/billetera/compras/qr-inventado-que-no-existe-0000000000)
+chk "QR de \$12.000" 201 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"monto":12000}' $B/comercios/$SID/compras); QR2=$(campo .codigo); chk "da 1 sello" 1 $(campo .sellos)
+chk "la cajera lo anula" 204 $(code -X POST -H "Authorization: Bearer $CAJA1" $B/comercios/$SID/compras/$QR2/anular)
+chk "queda anulado" Anulada $(code -H "Authorization: Bearer $CAJA1" $B/comercios/$SID/compras/$QR2 >/dev/null; campo .estado)
+chk "un QR anulado no se puede usar -> 409" 409 $(code -X POST -H "Authorization: Bearer $LUCIA" $B/billetera/compras/$QR2)
+chk "por DNI sin monto en el súper -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"clienteId":1}' $B/comercios/$SID/sellos)
+chk "por DNI con \$25.000" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"clienteId":1,"monto":25000}' $B/comercios/$SID/sellos); chk "suma 2 sellos" 2 $(campo .sellosSumados); chk "Lucía tiene 5 en el súper" 5 $(campo .sellosActuales)
+chk "el resumen del súper cuenta 5 sellos del mes" 5 $(code -H "Authorization: Bearer $SUPER" $B/comercios/$SID/resumen >/dev/null; campo .sellosUltimos30Dias)
 
 echo "== Panel"
 chk "clientes en riesgo" 200 $(code -H "Authorization: Bearer $DUENO" $B/comercios/1/clientes-en-riesgo)

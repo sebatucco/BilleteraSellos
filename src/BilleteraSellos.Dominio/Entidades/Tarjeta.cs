@@ -56,28 +56,39 @@ public class Tarjeta
 
     public bool EstaCompleta(ProgramaSellos programa) => SellosActuales >= programa.SellosNecesarios;
 
-    /// <summary>Suma un sello por una compra. No suma si la tarjeta está completa o si el último sello es muy reciente.</summary>
-    public Resultado SumarSello(ProgramaSellos programa, DateTime ahora, string? cargadoPor)
+    /// <summary>Premios que se pueden canjear ahora (los sellos que sobran quedan para la próxima vuelta).</summary>
+    public int PremiosDisponibles(ProgramaSellos programa) =>
+        programa.SellosNecesarios > 0 ? SellosActuales / programa.SellosNecesarios : 0;
+
+    /// <summary>Suma un sello por una compra, sin monto. Atajo de <see cref="SumarSellos"/>.</summary>
+    public Resultado SumarSello(ProgramaSellos programa, DateTime ahora, string? cargadoPor) =>
+        SumarSellos(programa, 1, null, ahora, cargadoPor);
+
+    /// <summary>
+    /// Suma los sellos de una compra. Los que pasan del premio quedan guardados para la vuelta siguiente.
+    /// No suma si el último sello es muy reciente (regla de horas entre sellos).
+    /// </summary>
+    public Resultado SumarSellos(ProgramaSellos programa, int cantidad, decimal? monto, DateTime ahora, string? cargadoPor)
     {
-        if (EstaCompleta(programa))
-            return Error.Conflicto("La tarjeta ya está completa. El cliente tiene que canjear el premio antes de sumar más sellos.");
+        if (cantidad < 1) return Error.Validacion("La cantidad de sellos tiene que ser al menos 1.");
         if (UltimoSello is { } ultimo && ahora - ultimo < TimeSpan.FromHours(programa.HorasEntreSellos))
             return Error.Conflicto($"Ya se sumó un sello hace menos de {programa.HorasEntreSellos} h. Si es una compra nueva, esperá o cambiá la regla del programa.");
 
-        SellosActuales++;
-        SellosTotales++;
+        SellosActuales += cantidad;
+        SellosTotales += cantidad;
         UltimoSello = ahora;
-        Movimientos.Add(Movimiento.Nuevo(TipoMovimiento.Sello, ahora, cargadoPor));
+        // Un movimiento por compra: así las visitas siguen contando compras, no sellos.
+        Movimientos.Add(Movimiento.Nuevo(TipoMovimiento.Sello, ahora, cargadoPor, cantidad, monto));
         return Resultado.Ok();
     }
 
-    /// <summary>Canjea el premio: descuenta los sellos y genera el canje con el código para la caja.</summary>
     /// <summary>Si se puede canjear el premio ahora. Sirve para no generar un código de canje en vano.</summary>
     public Resultado PuedeCanjear(ProgramaSellos programa) =>
         EstaCompleta(programa)
             ? Resultado.Ok()
             : Error.Conflicto($"Todavía te faltan {programa.SellosNecesarios - SellosActuales} sellos.");
 
+    /// <summary>Canjea un premio: descuenta los sellos necesarios (el sobrante queda) y genera el canje con el código para la caja.</summary>
     public Resultado<Canje> Canjear(ProgramaSellos programa, string codigo, DateTime ahora)
     {
         if (PuedeCanjear(programa) is { Exito: false } no) return no.Error!;
@@ -109,9 +120,13 @@ public class Movimiento
     public TipoMovimiento Tipo { get; private set; }
     public DateTime Fecha { get; private set; } = DateTime.UtcNow;
     public string? CargadoPor { get; private set; }
+    /// <summary>Sellos que sumó este movimiento (una compra puede dar varios).</summary>
+    public int Cantidad { get; private set; } = 1;
+    /// <summary>Monto de la compra, si la caja lo cargó.</summary>
+    public decimal? Monto { get; private set; }
 
-    internal static Movimiento Nuevo(TipoMovimiento tipo, DateTime fecha, string? cargadoPor) =>
-        new() { Tipo = tipo, Fecha = fecha, CargadoPor = cargadoPor };
+    internal static Movimiento Nuevo(TipoMovimiento tipo, DateTime fecha, string? cargadoPor, int cantidad = 1, decimal? monto = null) =>
+        new() { Tipo = tipo, Fecha = fecha, CargadoPor = cargadoPor, Cantidad = cantidad, Monto = monto };
 }
 
 /// <summary>Un premio canjeado, con el código que el cliente muestra en la caja.</summary>

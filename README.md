@@ -48,9 +48,12 @@ Usuarios de ejemplo del panel (contraseña de todos: `Demo1234`):
 | barberia@demo.com | Barbería Norte | Dueño |
 | panaderia@demo.com | Panadería La Espiga | Dueña |
 | verduleria@demo.com | Verdulería Doña Rosa | Dueña |
+| super@demo.com | Supermercado Gómez (1 sello cada $10.000, compra mínima $5.000) | Dueño |
+| caja1@super.demo | Supermercado Gómez | Cajera |
 
 - **Cliente:** entrá con el celular `1154873320` (Lucía, ya tiene tarjetas en 3 comercios). En desarrollo el código de verificación aparece en la misma pantalla y en la consola. Con cualquier otro número creás una cuenta nueva.
 - **Comercio:** ingresá como `barberia@demo.com`, buscá el DNI `30111222` y sumá un sello: con eso Lucía completa la tarjeta. En modo Cliente canjeá el premio y copiá el código; en modo Comercio, entregalo.
+- **QR de la compra:** ingresá como `caja1@super.demo`, escribí un monto (por ejemplo `35000`) y tocá **Mostrar QR**. En otra pestaña (o desde el celular), entrá como Lucía y escaneá el QR: suma 3 sellos en Supermercado Gómez.
 - **Roles:** con `caja@cafe.demo` no aparecen las reglas de la tarjeta ni el equipo; con `cafe@demo.com` sí.
 - **Avisos automáticos:** en Swagger ejecutá `POST /api/avisos/procesar`. En la consola vas a ver el saludo de cumpleaños y los "te extrañamos".
 - **Swagger con login:** hacé login, copiá el `token` y pegalo en el botón **Authorize**.
@@ -71,6 +74,7 @@ Para empezar de cero con los datos de ejemplo, borrá `billetera.db` y volvé a 
 - **Escanear en la caja:** en el panel, **Escanear QR del cliente** abre la cámara. Usa el lector que trae el navegador (`BarcodeDetector`, en Chrome para Android) y, si no existe (Safari, Firefox), `jsQR`. Si la cámara no está disponible o se niega el permiso, se puede buscar por DNI o teléfono como siempre.
 - **Cartel del mostrador:** en el panel, **Imprimir cartel** abre `cartel.html?c=<codigo>` con el nombre del comercio, el premio y un QR que lleva a `/#unirse=<codigo>`. El cliente lo escanea con la cámara, entra con su celular (o se registra) y la tarjeta se suma sola a su billetera.
 - **App instalable (PWA):** desde el celular se puede "Agregar a la pantalla de inicio" y abre como una app. El service worker guarda solo la parte visual (páginas, scripts, íconos) para que abra rápido y sin conexión. **Nunca guarda respuestas de `/api`**, que tienen datos personales. Al publicar cambios en esos archivos, subí `VERSION` en `wwwroot/sw.js`.
+- **QR de la compra:** la caja escribe el monto, el panel muestra un QR de un solo uso que vence a los 3 minutos y el cliente lo escanea con su billetera (o con la cámara del celular: el QR es un link a `/#compra=<codigo>`). Los sellos se suman solos. No tiene nada que ver con el medio de pago: sirve igual si el cliente paga en efectivo, con tarjeta o con Mercado Pago. En la base se guarda solo el hash del código, y queda registrado qué cajero lo generó, el monto y quién lo usó.
 - Las librerías de QR están en `wwwroot/lib` con sus licencias: qrcode-generator 1.4.4 (MIT) y jsQR 1.4.0 (Apache 2.0).
 
 ### Probar la cámara desde el celular
@@ -123,13 +127,18 @@ pruebas/humo.sh                     Prueba de punta a punta de la API (la corre 
 | El cajero da de alta a quien no tiene la app | `POST /api/comercios/{id}/clientes` |
 | Buscar en la caja por DNI, teléfono (con o sin +54 9) o QR | `GET /api/comercios/{id}/clientes/buscar` |
 | La tarjeta se crea sola con el primer sello | `POST /api/comercios/{id}/sellos` |
-| No se puede sellar dos veces seguidas (horas configurables) | `Tarjeta.SumarSello()` y `ProgramaSellos.HorasEntreSellos` |
-| Tarjeta completa: no suma más hasta canjear | `POST /api/comercios/{id}/sellos` |
+| No se puede sellar dos veces seguidas (horas configurables) | `Tarjeta.SumarSellos()` y `ProgramaSellos.HorasEntreSellos` |
+| Sellos por monto: 1 por compra, o 1 cada $X, con compra mínima opcional y tope de 30 por compra | `ProgramaSellos.SellosPorCompra()` |
+| Los sellos que pasan del premio quedan guardados para la vuelta siguiente (y se puede canjear más de un premio) | `Tarjeta.SumarSellos()` y `Tarjeta.Canjear()` |
+| Aviso "completaste tu tarjeta" solo cuando la compra la completa, no con cada sello de más | `Aplicacion/Funcionalidades/Comercios/Sellado.cs` |
+| QR de la compra: lo genera la caja con el monto, sirve una vez y vence a los 3 minutos | `POST /api/comercios/{id}/compras` → `POST /api/billetera/compras/{codigo}` |
+| La caja ve si el cliente ya escaneó el QR, o lo anula | `GET /api/comercios/{id}/compras/{codigo}` y `.../anular` |
+| Si la espera entre sellos no deja sumar, el QR no se consume | `UsarQrCompraHandler` |
 | Canje con código de 6 caracteres, sin letras confusas, con vencimiento | `POST /api/billetera/tarjetas/{tarjetaId}/canjear` |
 | El código solo sirve en su comercio y una sola vez | `POST /api/comercios/{id}/canjes/{codigo}/entregar` |
 | Niveles Bronce (0), Plata (10), Oro (30 sellos) por comercio | `Dominio/Reglas` → `Niveles` |
 | Clientes en riesgo según su propio ritmo (2x = riesgo, 3x = crítico) | `GET /api/comercios/{id}/clientes-en-riesgo` |
-| Calculadora de costo del premio | `GET /api/comercios/{id}/costo-premio` |
+| Calculadora de costo del premio (asume 1 sello por compra; con sellos por monto, cargá en "compras con sello" la cantidad de sellos del mes) | `GET /api/comercios/{id}/costo-premio` |
 | Cumpleaños próximos | `GET /api/comercios/{id}/cumpleanos` |
 | Saludo de cumpleaños y "te extrañamos", sin repetir en 14 días | `Aplicacion/Funcionalidades/Avisos` (lo dispara `Api/Tareas/AvisosAutomaticos.cs`) |
 | El cliente acepta o no promos de cada comercio | `PUT /api/billetera/tarjetas/{tarjetaId}/promos` |

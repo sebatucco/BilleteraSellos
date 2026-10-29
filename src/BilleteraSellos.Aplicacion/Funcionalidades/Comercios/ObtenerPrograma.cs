@@ -1,8 +1,10 @@
 namespace BilleteraSellos.Aplicacion.Funcionalidades.Comercios;
 
-public sealed record ProgramaVista(int SellosNecesarios, string Premio, decimal CostoPremio, int DiasParaRetirar, int HorasEntreSellos)
+public sealed record ProgramaVista(int SellosNecesarios, string Premio, decimal CostoPremio, int DiasParaRetirar, int HorasEntreSellos,
+    decimal? MontoPorSello, decimal? CompraMinima)
 {
-    public static ProgramaVista Desde(ProgramaSellos p) => new(p.SellosNecesarios, p.Premio, p.CostoPremio, p.DiasParaRetirar, p.HorasEntreSellos);
+    public static ProgramaVista Desde(ProgramaSellos p) =>
+        new(p.SellosNecesarios, p.Premio, p.CostoPremio, p.DiasParaRetirar, p.HorasEntreSellos, p.MontoPorSello, p.CompraMinima);
 }
 
 /// <summary>Las reglas de la tarjeta del comercio.</summary>

@@ -13,7 +13,10 @@ public static class DatosDemo
         var barberia = NuevoComercio("Barbería Norte", "Barbería", "Gorriti 3360", "barberia-norte", "#1F5F73", 6, "Corte gratis", 6000);
         var panaderia = NuevoComercio("Panadería La Espiga", "Panadería", "Corrientes 5502", "la-espiga", "#A2541C", 8, "20% en tu compra", 1500);
         var verduleria = NuevoComercio("Verdulería Doña Rosa", "Verdulería", "Lavalleja 812", "dona-rosa", "#2E7A3E", 10, "Bolsa de fruta de estación", 2500);
-        db.Comercios.AddRange(cafe, barberia, panaderia, verduleria);
+        // Un súper con sellos por monto: 1 sello cada $10.000, desde $5.000 de compra (para probar el QR de la compra).
+        var supermercado = NuevoComercio("Supermercado Gómez", "Supermercado", "Av. Belgrano 1450", "supermercado-gomez", "#B3261E", 10, "$5.000 de descuento en tu compra", 5000);
+        supermercado.Programa!.Actualizar(10, "$5.000 de descuento en tu compra", 5000, diasParaRetirar: 15, horasEntreSellos: 0, montoPorSello: 10000, compraMinima: 5000);
+        db.Comercios.AddRange(cafe, barberia, panaderia, verduleria, supermercado);
 
         var hoy = DateOnly.FromDateTime(DateTime.UtcNow);
         var lucia = NuevoCliente("Lucía Fernández", "30111222", "1154873320", new DateOnly(1994, 3, 8), hoy);
@@ -29,7 +32,9 @@ public static class DatosDemo
             Usuario.Crear(cafe, "Juan (caja)", "caja@cafe.demo", hash, RolUsuario.Cajero),
             Usuario.Crear(barberia, "Nico (dueño)", "barberia@demo.com", hash, RolUsuario.Dueno),
             Usuario.Crear(panaderia, "Marta (dueña)", "panaderia@demo.com", hash, RolUsuario.Dueno),
-            Usuario.Crear(verduleria, "Rosa (dueña)", "verduleria@demo.com", hash, RolUsuario.Dueno));
+            Usuario.Crear(verduleria, "Rosa (dueña)", "verduleria@demo.com", hash, RolUsuario.Dueno),
+            Usuario.Crear(supermercado, "Gómez (dueño)", "super@demo.com", hash, RolUsuario.Dueno),
+            Usuario.Crear(supermercado, "Ana (caja 1)", "caja1@super.demo", hash, RolUsuario.Cajero));
 
         // Historias de visitas: cada cuántos días venía y hace cuántos días vino por última vez.
         AgregarHistoria(db, lucia, cafe, visitas: 34, cadaDias: 3, ultimaHaceDias: 1);

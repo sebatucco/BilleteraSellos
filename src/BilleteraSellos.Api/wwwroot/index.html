@@ -58,6 +58,16 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
 .capa-scan .mira{position:relative;width:100%;max-width:480px}
 .capa-scan .mira::after{content:"";position:absolute;inset:18%;border:3px solid rgba(255,255,255,.85);border-radius:18px;pointer-events:none}
 .capa-scan button{background:#fff;color:#111;min-width:160px}
+/* QR de la compra (la capa siempre es blanca: colores fijos, legibles en tema claro y oscuro) */
+#compra-form button{white-space:nowrap}
+.capa-compra .acciones{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.capa-compra .acciones button{min-width:120px}
+.capa-compra .acciones .secundario{background:#E3E6EE;color:#111}
+.capa-compra canvas.usado{opacity:.15}
+.compra-estado{font-size:18px;font-weight:700;text-align:center;min-height:1.4em}
+.compra-estado.ok{color:#1E8A57}.compra-estado.mal{color:#C23A3A}
+.cuenta{font-variant-numeric:tabular-nums;font-size:15px;color:#555}
+.extra-sellos{font-size:13px;font-weight:600;background:rgba(255,255,255,.22);border-radius:8px;padding:6px 10px}
 </style>
 </head>
 <body>
@@ -68,6 +78,7 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
   <!-- ===== CLIENTE ===== -->
   <section id="v-cli" class="stack">
     <p class="msg small" id="unirse-aviso" hidden></p>
+    <p class="msg small" id="compra-aviso" hidden></p>
     <form class="panel" id="cli-tel" hidden>
       <h3>Entrá a tu billetera</h3>
       <label>Tu celular, con código de área<input id="cli-telefono" inputmode="tel" autocomplete="tel" placeholder="11 5487 3320"></label>
@@ -129,10 +140,18 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
         <div><p class="small muted" id="panel-quien"></p><h2 id="panel-comercio"></h2></div>
         <button id="com-salir">Salir</button>
       </div>
+      <!-- QR de la compra: el cajero escribe el monto y el cliente escanea. Sirve para cualquier medio de pago. -->
+      <form class="panel" id="compra-form">
+        <h3>QR de la compra</h3>
+        <p class="small muted">Para cualquier medio de pago: escribí el monto y el cliente escanea el QR con su billetera o con la cámara del celular.</p>
+        <div class="row"><input id="compra-monto" inputmode="decimal" autocomplete="off" placeholder="Monto de la compra ($)" aria-label="Monto de la compra"><button class="primary">Mostrar QR</button></div>
+        <p class="small" id="compra-msg"></p>
+      </form>
       <div class="panel" id="resumen"></div>
       <div class="panel">
-        <h3>Sumar sello</h3>
+        <h3>Sumar sellos con DNI o QR del cliente</h3>
         <form class="row" id="com-buscar"><input id="com-q" placeholder="DNI, teléfono o código QR"><button class="primary">Buscar</button></form>
+        <label>Monto de la compra (si tu tarjeta suma por monto)<input id="com-monto" inputmode="decimal" autocomplete="off" placeholder="Ej: 35000"></label>
         <button type="button" id="com-escanear">Escanear QR del cliente</button>
         <div id="com-found"></div>
       </div>
@@ -166,6 +185,11 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
           <label>Horas entre sellos<input id="p-horas" type="number" min="0" max="72"></label>
         </div>
         <label>Premio<input id="p-premio"></label>
+        <div class="grid2">
+          <label>1 sello cada $ (vacío = 1 por compra)<input id="p-monto-sello" inputmode="decimal" autocomplete="off" placeholder="Ej: 10000"></label>
+          <label>Compra mínima $ (opcional)<input id="p-minima" inputmode="decimal" autocomplete="off" placeholder="Ej: 5000"></label>
+        </div>
+        <p class="hint" id="p-ejemplo"></p>
         <button class="primary">Guardar reglas</button>
         <p class="small" id="p-msg"></p>
       </form>
@@ -200,9 +224,24 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
   <button type="button" id="capa-qr-cerrar">Listo</button>
 </div>
 
+<!-- QR de la compra a pantalla completa (lo ve el cliente en la caja) -->
+<div class="capa capa-qr capa-compra" id="capa-compra" hidden role="dialog" aria-modal="true" aria-label="QR de la compra">
+  <p class="nombre" id="compra-titulo"></p>
+  <canvas id="compra-canvas" aria-label="QR de la compra"></canvas>
+  <p class="ayuda" id="compra-ayuda"></p>
+  <p class="cuenta" id="compra-cuenta"></p>
+  <p class="compra-estado" id="compra-estado" aria-live="polite"></p>
+  <div class="acciones">
+    <button type="button" class="secundario" id="compra-anular">Anular</button>
+    <button type="button" id="compra-otra" hidden>Generar otro</button>
+    <button type="button" id="compra-nueva" hidden>Nueva compra</button>
+    <button type="button" class="secundario" id="compra-cerrar">Cerrar</button>
+  </div>
+</div>
+
 <!-- Escáner de la caja -->
 <div class="capa capa-scan" id="capa-scan" hidden role="dialog" aria-modal="true" aria-label="Escanear QR">
-  <p>Apuntá al QR de la billetera del cliente</p>
+  <p id="scan-titulo">Apuntá al QR de la billetera del cliente</p>
   <div class="mira"><video id="scan-video" playsinline muted></video></div>
   <p class="small" id="scan-estado"></p>
   <button type="button" id="scan-cerrar">Cancelar</button>
@@ -274,6 +313,7 @@ async function salirCliente(){
 }
 async function cargarBilletera(){
   if(unirse&&tokCli)await sumarDesdeCartel();
+  if(compraPendiente&&tokCli)await usarCompraPendiente();
   let b,todos;
   try{[b,todos]=await Promise.all([api("/billetera",{token:tokCli}),api("/comercios")])}
   catch(x){if(x.status===401||x.status===403){tokCli=null;guardar("tokCli",null);pantallaCli("#cli-tel");return}
@@ -286,13 +326,14 @@ async function cargarBilletera(){
       const pend=t.canjesPendientes.map(k=>`<div><p class="small">Código para la caja</p><p class="code">${esc(k.codigo)}</p><p class="small">${esc(k.premio)} · vence ${new Date(k.venceEn).toLocaleDateString("es-AR")}</p></div>`).join("");
       return `<div class="card" style="background:${esc(t.color)};--c:${esc(t.color)}">
         <div class="row between"><b style="font-size:18px">${esc(t.comercio)}</b><span class="tier">${t.nivel}</span></div>
-        <div class="stamps">${st}</div>${pend}
+        <div class="stamps">${st}</div>${extraSellos(t)}${pend}
         ${t.completa?`<button data-canjear="${t.tarjetaId}">Canjear: ${esc(t.premio)}</button>`:`<p class="small">${t.sellosNecesarios-t.sellosActuales===1?"Te falta 1":"Te faltan "+(t.sellosNecesarios-t.sellosActuales)} para: ${esc(t.premio)}</p>`}
         ${t.resenaGoogleUrl?`<a class="small" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener">Dejar una reseña en Google</a>`:""}
       </div>`}).join("")+
     `<div class="panel"><h3>Comercios adheridos</h3>${todos.filter(c=>!tiene.has(c.id)).map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${esc(c.rubro)} · ${esc(c.premio)}</p></div><button data-sumar="${esc(c.codigo)}">Sumar</button></div>`).join("")||'<p class="small muted">Ya tenés todas las tarjetas.</p>'}</div>`+
     "";
   mostrarBotonQR(b);
+  mostrarExtrasBilletera();
   pantallaCli("#billetera");
 }
 
@@ -333,7 +374,7 @@ async function cargarResumen(){
   calcular();
 }
 function tarjetaEnCaja(c){
-  return `<div class="msg stack"><div class="row between"><b>${esc(c.nombre)}</b><span class="pill">${c.nivel}</span></div><p class="small muted">${c.tieneTarjeta?`${c.sellosActuales} de ${c.sellosNecesarios} sellos`:"Todavía no tiene tu tarjeta: se crea con este sello"}</p><button class="primary" data-sello="${c.clienteId}">Sumar 1 sello</button></div>`;
+  return `<div class="msg stack"><div class="row between"><b>${esc(c.nombre)}</b><span class="pill">${c.nivel}</span></div><p class="small muted">${c.tieneTarjeta?`${c.sellosActuales} de ${c.sellosNecesarios} sellos`:"Todavía no tiene tu tarjeta: se crea con este sello"}</p><button class="primary" data-sello="${c.clienteId}">Sumar sellos</button></div>`;
 }
 $("#com-buscar").onsubmit=async e=>{
   e.preventDefault();
@@ -370,10 +411,14 @@ $("#c-ticket").oninput=calcular;$("#c-vol").oninput=calcular;
 async function cargarPrograma(){
   const p=await com("/programa");
   $("#p-sellos").value=p.sellosNecesarios;$("#p-costo").value=p.costoPremio;$("#p-dias").value=p.diasParaRetirar;$("#p-horas").value=p.horasEntreSellos;$("#p-premio").value=p.premio;
+  $("#p-monto-sello").value=p.montoPorSello??"";$("#p-minima").value=p.compraMinima??"";
+  ejemploReglas();
 }
 $("#programa").onsubmit=async e=>{
   e.preventDefault();
-  try{await com("/programa",{method:"PUT",body:{sellosNecesarios:+$("#p-sellos").value,premio:$("#p-premio").value,costoPremio:+$("#p-costo").value,diasParaRetirar:+$("#p-dias").value,horasEntreSellos:+$("#p-horas").value}});
+  const montoPorSello=parsearMonto($("#p-monto-sello").value), compraMinima=parsearMonto($("#p-minima").value);
+  if(montoPorSello===undefined||compraMinima===undefined){err("#p-msg","Escribí los montos con números, por ejemplo 10000.");return}
+  try{await com("/programa",{method:"PUT",body:{sellosNecesarios:+$("#p-sellos").value,premio:$("#p-premio").value,costoPremio:+$("#p-costo").value,diasParaRetirar:+$("#p-dias").value,horasEntreSellos:+$("#p-horas").value,montoPorSello,compraMinima}});
     $("#p-msg").innerHTML='<span class="good">Guardado.</span>';calcular()}
   catch(x){err("#p-msg",x.message)}
 };
@@ -397,8 +442,12 @@ document.addEventListener("click",async e=>{
     if(t.dataset.canjear){await api(`/billetera/tarjetas/${t.dataset.canjear}/canjear`,{token:tokCli,method:"POST"});return cargarBilletera()}
     if(t.dataset.sumar){await api("/billetera/tarjetas",{token:tokCli,method:"POST",body:{codigoComercio:t.dataset.sumar}});return cargarBilletera()}
     if(t.dataset.sello){
-      const r=await com("/sellos",{method:"POST",body:{clienteId:+t.dataset.sello}});
-      $("#com-found").innerHTML=`<p class="msg">${r.tarjetaCompleta?"¡Tarjeta completa! Ya puede canjear el premio.":`Sello sumado: ${r.sellosActuales} de ${r.sellosNecesarios}.`}</p>`;
+      const monto=parsearMonto($("#com-monto").value);
+      if(monto===undefined){err("#com-found","Escribí el monto con números, por ejemplo 35000.");return}
+      const r=await com("/sellos",{method:"POST",body:{clienteId:+t.dataset.sello,monto}});
+      const n=r.sellosSumados??1, txt=`${n} ${n===1?"sello":"sellos"}`;
+      $("#com-found").innerHTML=`<p class="msg">${r.tarjetaCompleta?`Sumaste ${txt}. ¡Tarjeta completa! Ya puede canjear el premio (${r.sellosActuales} de ${r.sellosNecesarios}).`:`Sumaste ${txt} (${r.sellosActuales} de ${r.sellosNecesarios}).`}</p>`;
+      $("#com-monto").value="";
       return cargarResumen();
     }
     if(t.dataset.activo){await com(`/usuarios/${t.dataset.activo}/activo`,{method:"PUT",body:{activo:t.dataset.valor==="true"}});return cargarEquipo()}
@@ -485,7 +534,9 @@ document.addEventListener("click",e=>{if(e.target.closest("#ver-qr"))abrirMiQR()
 /* --- Escáner de la caja ---
    Usa BarcodeDetector cuando el navegador lo trae (Chrome/Android); si no (Safari, Firefox),
    carga jsQR y lee cuadros del video en un canvas. */
-let detector=null, flujo=null, lazo=null;
+let detector=null, flujo=null, lazo=null, modoEscaner="caja";
+/* El escáner lo usan la caja (QR del cliente) y la billetera (QR de la compra): cada uno muestra los errores en su lugar. */
+function errEscaner(m){modoEscaner==="caja"?err("#com-found",m):avisoBilletera(m,"bad")}
 const lienzo=document.createElement("canvas");
 function cargarJsQR(){
   if(window.jsQR)return Promise.resolve();
@@ -515,8 +566,10 @@ async function decodificarCuadro(fuente){
 window.decodificarCuadro=decodificarCuadro;
 async function abrirEscaner(){
   const estado=$("#scan-estado");estado.textContent="";
+  const alternativa=modoEscaner==="caja"?"Buscá por DNI o teléfono.":"Escaneá el QR con la cámara del celular.";
+  $("#scan-titulo").textContent=modoEscaner==="caja"?"Apuntá al QR de la billetera del cliente":"Apuntá al QR que te muestra la caja";
   if(!navigator.mediaDevices?.getUserMedia){
-    err("#com-found","Este navegador no deja usar la cámara acá (hace falta HTTPS). Buscá por DNI o teléfono.");return;
+    errEscaner("Este navegador no deja usar la cámara acá (hace falta HTTPS). "+alternativa);return;
   }
   $("#capa-scan").hidden=false;estado.textContent="Abriendo la cámara…";
   try{
@@ -524,10 +577,10 @@ async function abrirEscaner(){
     flujo=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
   }catch(x){
     cerrarEscaner();
-    const m=x.name==="NotAllowedError"||x.name==="SecurityError"?"No diste permiso para usar la cámara. Habilitalo en el navegador o buscá por DNI o teléfono."
-      :x.name==="NotFoundError"?"No encontramos ninguna cámara. Buscá por DNI o teléfono."
-      :"No se pudo abrir la cámara. Buscá por DNI o teléfono.";
-    err("#com-found",m);return;
+    const m=x.name==="NotAllowedError"||x.name==="SecurityError"?"No diste permiso para usar la cámara. Habilitalo en el navegador o "+alternativa.charAt(0).toLowerCase()+alternativa.slice(1)
+      :x.name==="NotFoundError"?"No encontramos ninguna cámara. "+alternativa
+      :"No se pudo abrir la cámara. "+alternativa;
+    errEscaner(m);return;
   }
   const v=$("#scan-video");v.srcObject=flujo;await v.play().catch(()=>{});
   estado.textContent="Buscando un QR…";
@@ -548,13 +601,185 @@ function cerrarEscaner(){
 }
 function usarLectura(texto){
   cerrarEscaner();
+  if(modoEscaner==="billetera")return usarLecturaBilletera(texto);
+  if(/#compra=/.test(texto)){err("#com-found","Ese es el QR de una compra: lo escanea el cliente con su billetera.");return}
   if(/#unirse=/.test(texto)){err("#com-found","Ese es el QR de un comercio. Pedile al cliente el QR de su billetera (botón «Mostrar mi QR»).");return}
   $("#com-q").value=texto.trim();
   $("#com-buscar").requestSubmit();
 }
-$("#com-escanear").onclick=abrirEscaner;
+$("#com-escanear").onclick=()=>{modoEscaner="caja";abrirEscaner()};
 $("#scan-cerrar").onclick=cerrarEscaner;
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("#capa-scan").hidden)cerrarEscaner();if(!$("#capa-qr").hidden)cerrarMiQR()}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("#capa-scan").hidden)cerrarEscaner();if(!$("#capa-qr").hidden)cerrarMiQR();if(!$("#capa-compra").hidden)cerrarCompra()}});
+
+/* ================= QR DE LA COMPRA Y SELLOS POR MONTO ================= */
+
+/* Montos como los escribe la gente en Argentina: "35000", "35.000", "35.000,50", "$ 1.234". Vacío → null; inválido → undefined. */
+function parsearMonto(texto){
+  let t=String(texto??"").replace(/[$\s]/g,"");
+  if(!t)return null;
+  if(t.includes(","))t=t.replace(/\./g,"").replace(",",".");
+  else if(/^\d{1,3}(\.\d{3})+$/.test(t))t=t.replace(/\./g,"");
+  const n=Number(t);
+  return Number.isFinite(n)&&n>=0?n:undefined;
+}
+const sellosTxt=n=>`${n} ${n===1?"sello":"sellos"}`;
+
+/* Ejemplo en vivo de cómo quedan las reglas, para que el dueño vea qué pasa con una compra. */
+function ejemploReglas(){
+  const m=parsearMonto($("#p-monto-sello").value), min=parsearMonto($("#p-minima").value);
+  let t;
+  if(!m)t="Cada compra suma 1 sello, sin importar el monto.";
+  else{const ej=Math.max(m*3.5,min||0);t=`Una compra de ${fmt(ej)} suma ${sellosTxt(Math.floor(ej/m))}.`}
+  if(min)t+=` Las compras de menos de ${fmt(min)} no suman.`;
+  $("#p-ejemplo").textContent=t;
+}
+$("#p-monto-sello").oninput=ejemploReglas;$("#p-minima").oninput=ejemploReglas;
+
+/* --- Caja: generar y mostrar el QR --- */
+let compra=null, compraConsulta=null, compraReloj=null, bloqueoCompra=null;
+async function generarCompra(monto){
+  err("#compra-msg");
+  try{abrirCompra(await com("/compras",{method:"POST",body:{monto}}))}
+  catch(x){
+    if(!$("#capa-compra").hidden)cerrarCompra(false);
+    err("#compra-msg",x.message);
+  }
+}
+$("#compra-form").onsubmit=e=>{
+  e.preventDefault();
+  const monto=parsearMonto($("#compra-monto").value);
+  if(monto===undefined){err("#compra-msg","Escribí el monto con números, por ejemplo 35000.");return}
+  generarCompra(monto);
+};
+async function abrirCompra(r){
+  detenerCompra();
+  compra={codigo:r.codigo,sellos:r.sellos,monto:r.monto,venceEn:new Date(r.venceEn),estado:"Pendiente"};
+  const enlace=location.origin+"/#compra="+encodeURIComponent(r.codigo);
+  $("#compra-titulo").textContent=yo?.comercio||"";
+  const lado=Math.min(window.innerWidth,window.innerHeight)*0.7;
+  dibujarQR(enlace,$("#compra-canvas"),Math.max(200,Math.min(400,Math.floor(lado))));
+  $("#compra-canvas").classList.remove("usado");
+  $("#compra-ayuda").innerHTML=`Escaneá con tu billetera o con la cámara del celular para sumar <b>${sellosTxt(r.sellos)}</b>`+(r.monto!=null?`<br>Compra de ${fmt(r.monto)}`:"");
+  pintarEstadoCompra();
+  $("#capa-compra").hidden=false;
+  try{bloqueoCompra=await navigator.wakeLock?.request("screen")}catch{}
+  compraReloj=setInterval(cuentaRegresiva,1000);cuentaRegresiva();
+  compraConsulta=setInterval(consultarCompra,2000);
+}
+function cuentaRegresiva(){
+  if(!compra||compra.estado!=="Pendiente"){$("#compra-cuenta").textContent="";return}
+  const s=Math.max(0,Math.round((compra.venceEn-Date.now())/1000));
+  $("#compra-cuenta").textContent=`Vence en ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+  if(s===0)consultarCompra();
+}
+async function consultarCompra(){
+  if(!compra||compra.estado!=="Pendiente")return;
+  const codigo=compra.codigo;
+  try{
+    const r=await com(`/compras/${encodeURIComponent(codigo)}`);
+    if(!compra||compra.codigo!==codigo)return;
+    // Si el reloj de la caja está adelantado, el servidor manda: se muestra lo que diga él.
+    if(r.estado==="Pendiente"&&compra.venceEn<=Date.now())compra.venceEn=new Date(r.venceEn);
+    if(r.estado!==compra.estado){Object.assign(compra,{estado:r.estado,cliente:r.cliente,sellos:r.sellos});pintarEstadoCompra()}
+  }catch{}  // un corte de red momentáneo no corta la espera: se reintenta en 2 s
+}
+function pintarEstadoCompra(){
+  const e=compra?.estado, est=$("#compra-estado");
+  est.className="compra-estado";
+  $("#compra-anular").hidden=e!=="Pendiente";
+  $("#compra-otra").hidden=e!=="Vencida";
+  $("#compra-nueva").hidden=e!=="Usada";
+  if(e==="Pendiente"){est.textContent="Esperando que el cliente lo escanee…";return}
+  detenerCompra();
+  $("#compra-cuenta").textContent="";
+  $("#compra-canvas").classList.add("usado");
+  if(e==="Usada"){
+    est.classList.add("ok");
+    est.textContent=`✓ ${compra.cliente||"El cliente"} sumó ${sellosTxt(compra.sellos)}`;
+    $("#compra-monto").value="";err("#compra-msg");
+    cargarResumen().catch(()=>{});
+  }else if(e==="Vencida"){est.classList.add("mal");est.textContent="Este QR venció sin que lo escaneen."}
+  else if(e==="Anulada"){est.classList.add("mal");est.textContent="Este QR fue anulado."}
+}
+function detenerCompra(){clearInterval(compraConsulta);clearInterval(compraReloj);compraConsulta=compraReloj=null}
+async function anularCompra(){
+  if(!compra||compra.estado!=="Pendiente")return true;
+  try{await com(`/compras/${encodeURIComponent(compra.codigo)}/anular`,{method:"POST"});compra.estado="Anulada";return true}
+  catch(x){
+    // Si justo lo escanearon, no se puede anular: se muestra el resultado real.
+    await consultarCompra();
+    if(compra?.estado==="Pendiente"){$("#compra-estado").className="compra-estado mal";$("#compra-estado").textContent=x.message}
+    return false;
+  }
+}
+/* Cerrar con el QR pendiente lo anula: así nadie lo puede usar después sin que el cajero lo vea. */
+async function cerrarCompra(anular=true){
+  if(anular&&compra?.estado==="Pendiente"&&!(await anularCompra()))return;
+  const anulado=compra?.estado==="Anulada";
+  detenerCompra();compra=null;
+  $("#capa-compra").hidden=true;
+  try{bloqueoCompra?.release()}catch{}bloqueoCompra=null;
+  if(anulado)$("#compra-msg").innerHTML='<span class="muted">El QR se anuló.</span>';
+}
+$("#compra-anular").onclick=async()=>{if(await anularCompra())pintarEstadoCompra()};
+$("#compra-cerrar").onclick=()=>cerrarCompra();
+$("#compra-otra").onclick=()=>generarCompra(compra?.monto??null);
+$("#compra-nueva").onclick=()=>{cerrarCompra(false);$("#compra-monto").focus()};
+
+/* --- Billetera: usar el QR de una compra (/#compra=codigo) --- */
+let compraPendiente=null, compraMsg=null;
+function leerEnlaceCompra(){
+  const m=location.hash.match(/^#compra=([A-Za-z0-9_-]{10,120})$/);
+  if(!m){$("#compra-aviso").hidden=true;return false}
+  compraPendiente=m[1];
+  if(!tokCli){$("#compra-aviso").textContent="Entrá con tu celular para sumar los sellos de tu compra.";$("#compra-aviso").hidden=false}
+  return true;
+}
+async function usarCompraPendiente(){
+  const codigo=compraPendiente;compraPendiente=null;$("#compra-aviso").hidden=true;
+  if(/^#compra=/.test(location.hash))limpiarEnlace();
+  await usarCodigoCompra(codigo);
+}
+async function usarCodigoCompra(codigo){
+  try{
+    const r=await api(`/billetera/compras/${encodeURIComponent(codigo)}`,{token:tokCli,method:"POST"});
+    let t=`¡Sumaste ${sellosTxt(r.sellosSumados)} en ${r.comercio}!`;
+    if(r.tarjetaNueva)t+=" Ya tenés su tarjeta en tu billetera.";
+    if(r.tarjetaCompleta)t+=" Completaste la tarjeta: ya podés canjear tu premio.";
+    compraMsg={texto:t,tono:"good"};
+  }catch(x){
+    // Sin sesión válida se guarda el código para usarlo después de entrar.
+    if(x.status===401||x.status===403){compraPendiente=codigo;return}
+    compraMsg={texto:x.message,tono:"bad"};
+  }
+}
+function avisoBilletera(texto,tono){
+  let p=$("#compra-ok");
+  if(!p){p=document.createElement("p");p.id="compra-ok";p.setAttribute("role","status");($("#escanear-compra")||$("#ver-qr")).after(p)}
+  p.className=`msg small ${tono||""}`;p.textContent=texto;
+}
+function mostrarExtrasBilletera(){
+  const btn=document.createElement("button");
+  btn.id="escanear-compra";btn.textContent="Escanear QR de la compra";
+  $("#ver-qr").after(btn);
+  if(compraMsg){avisoBilletera(compraMsg.texto,compraMsg.tono);compraMsg=null}
+}
+document.addEventListener("click",e=>{if(e.target.closest("#escanear-compra")){modoEscaner="billetera";abrirEscaner()}});
+async function usarLecturaBilletera(texto){
+  const m=texto.match(/#compra=([A-Za-z0-9_-]{10,120})/);
+  if(m){await usarCodigoCompra(m[1]);return cargarBilletera()}
+  const u=texto.match(/#unirse=([a-z0-9-]{1,40})/i);
+  if(u){unirse=u[1].toLowerCase();await sumarDesdeCartel();return cargarBilletera()}
+  avisoBilletera("Ese QR no es de una compra. Pedile al cajero el QR de la compra.","bad");
+}
+/* Sellos de más: quedan guardados para la próxima tarjeta. */
+function extraSellos(t){
+  const premios=Math.floor(t.sellosActuales/t.sellosNecesarios), sobran=t.sellosActuales-t.sellosNecesarios;
+  if(premios>=2)return `<p class="extra-sellos">¡Tenés ${premios} premios para canjear!</p>`;
+  if(sobran>0)return `<p class="extra-sellos">+${sellosTxt(sobran)} guardados para tu próxima tarjeta</p>`;
+  return "";
+}
+window.addEventListener("hashchange",()=>{if(leerEnlaceCompra())modo("cli")});
 
 /* --- Cartel del mostrador --- */
 $("#com-cartel").onclick=async()=>{
@@ -573,6 +798,7 @@ if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostnam
 
 /* --- Arranque --- */
 leerEnlaceUnirse();
+leerEnlaceCompra();
 // El link del email trae #restablecer=TOKEN: abre directo la pantalla para crear la contraseña.
 if(location.hash.startsWith("#restablecer=")){
   tokenRestablecer=decodeURIComponent(location.hash.slice("#restablecer=".length));

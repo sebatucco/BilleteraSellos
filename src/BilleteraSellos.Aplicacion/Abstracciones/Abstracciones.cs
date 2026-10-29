@@ -17,6 +17,7 @@ public interface IAppDbContext
     DbSet<Sesion> Sesiones { get; }
     DbSet<CodigoVerificacion> CodigosVerificacion { get; }
     DbSet<TokenRestablecimiento> TokensRestablecimiento { get; }
+    DbSet<CompraQr> ComprasQr { get; }
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }
