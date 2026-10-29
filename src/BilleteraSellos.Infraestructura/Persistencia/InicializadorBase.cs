@@ -31,6 +31,9 @@ public static class InicializadorBase
                 {
                     await db.Usuarios.AnyAsync(ct);
                     await db.TokensRestablecimiento.AnyAsync(ct);
+                    await db.ComprasQr.AnyAsync(ct);
+                    await db.Movimientos.Select(m => m.Cantidad).FirstOrDefaultAsync(ct);
+                    await db.Programas.Select(p => p.MontoPorSello).FirstOrDefaultAsync(ct);
                 }
                 catch (Exception)
                 {

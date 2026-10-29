@@ -60,7 +60,7 @@ public class SumarSelloTests : BaseDePrueba
     }
 
     [Fact]
-    public async Task Con_la_tarjeta_completa_no_suma_mas()
+    public async Task Con_la_tarjeta_completa_suma_igual_y_no_vuelve_a_avisar()
     {
         var barberia = await ComercioAsync(sellos: 3);
         var lucia = await ClienteAsync();
@@ -68,8 +68,12 @@ public class SumarSelloTests : BaseDePrueba
 
         var r = await Handler().Handle(new SumarSello(barberia.Id, lucia.Id, "caja"), default);
 
-        AssertError(r, TipoError.Conflicto, "La tarjeta ya está completa. El cliente tiene que canjear el premio antes de sumar más sellos.");
-        Assert.Equal(3, (await NuevoContexto().Tarjetas.SingleAsync()).SellosActuales);
+        Assert.True(r.Exito);
+        Assert.Equal(4, r.Valor.SellosActuales);
+        Assert.True(r.Valor.TarjetaCompleta);
+        Assert.Equal(4, (await NuevoContexto().Tarjetas.SingleAsync()).SellosActuales);
+        // Avisó una sola vez: cuando la tarjeta se completó, no con el sello que sobra.
+        Assert.Single(Notificador.Enviados);
     }
 
     [Fact]

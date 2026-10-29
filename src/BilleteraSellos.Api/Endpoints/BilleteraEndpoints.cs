@@ -33,6 +33,11 @@ public static class BilleteraEndpoints
         g.MapPost("/tarjetas/{tarjetaId:int}/canjear", async (int tarjetaId, ClaimsPrincipal yo, CanjearPremioHandler h, CancellationToken ct) =>
             (await h.Handle(new CanjearPremio(ClienteId(yo), tarjetaId), ct)).ARespuesta());
 
+        // El cliente escaneó el QR de una compra: se le suman los sellos.
+        g.MapPost("/compras/{codigo}", async (string codigo, ClaimsPrincipal yo, UsarQrCompraHandler h, CancellationToken ct) =>
+            (await h.Handle(new UsarQrCompra(ClienteId(yo), codigo), ct)).ARespuesta())
+            .RequireRateLimiting("auth");
+
         g.MapPut("/tarjetas/{tarjetaId:int}/promos", async (int tarjetaId, PromosPedido p, ClaimsPrincipal yo, CambiarPromosHandler h, CancellationToken ct) =>
             (await h.Handle(new CambiarPromos(ClienteId(yo), tarjetaId, p.Acepta), ct)).ARespuesta(Results.NoContent));
     }
