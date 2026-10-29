@@ -14,7 +14,9 @@ R=$(mktemp)
 trap 'rm -f "$R"' EXIT
 pass=0; fail=0
 chk(){ # chk "descripcion" esperado obtenido
-  if [ "$2" == "$3" ]; then pass=$((pass+1)); echo "OK   $1"; else fail=$((fail+1)); echo "FAIL $1 (esperado $2, obtenido $3)"; echo "     respuesta: $(head -c 300 "$R")"; fi; }
+  if [ "$2" == "$3" ]; then pass=$((pass+1)); echo "OK   $1"; else fail=$((fail+1)); echo "FAIL $1 (esperado $2, obtenido $3)"; echo "     respuesta: $(head -c 300 "$R")"
+    # En GitHub Actions, cada falla queda además como anotación visible en el resumen del job.
+    [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=Prueba de humo::$1 (esperado $2, obtenido $3) $(head -c 200 "$R" | tr -d '\n')"; fi; }
 code(){ curl -s -o "$R" -w "%{http_code}" "$@"; }
 body(){ cat "$R"; }
 tok(){ jq -r '.token // empty' "$R"; }
@@ -101,7 +103,8 @@ chk "no se entrega dos veces -> 409" 409 $(code -X POST -H "Authorization: Beare
 echo "== QR de la compra (Supermercado Gómez: 1 sello cada \$10.000, compra mínima \$5.000)"
 chk "dueño del súper entra" 200 $(code -X POST -H "$J" -d '{"email":"super@demo.com","contrasena":"Demo1234"}' $B/auth/comercios/login); SUPER=$(tok); SID=$(campo .comercioId)
 chk "cajera del súper entra" 200 $(code -X POST -H "$J" -d '{"email":"caja1@super.demo","contrasena":"Demo1234"}' $B/auth/comercios/login); CAJA1=$(tok)
-chk "el programa del súper tiene monto por sello" 10000 $(code -H "Authorization: Bearer $SUPER" $B/comercios/$SID/programa >/dev/null; campo .montoPorSello)
+# Los decimales pueden venir como 10000 o 10000.00 según la base: se comparan como número.
+chk "el programa del súper tiene monto por sello" true $(code -H "Authorization: Bearer $SUPER" $B/comercios/$SID/programa >/dev/null; campo '.montoPorSello == 10000')
 chk "QR sin monto -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{}' $B/comercios/$SID/compras)
 chk "QR debajo de la compra mínima -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"monto":3000}' $B/comercios/$SID/compras)
 chk "QR con un monto absurdo -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $CAJA1" -d '{"monto":35000000}' $B/comercios/$SID/compras)
