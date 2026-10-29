@@ -226,6 +226,62 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
                     b.ToTable("Comercios");
                 });
 
+            modelBuilder.Entity("BilleteraSellos.Dominio.Entidades.CompraQr", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AnuladaEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ClienteId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CodigoHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("ComercioId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreadoEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("Monto")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<int>("Sellos")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UsadaEn")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UsuarioId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("VenceEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClienteId");
+
+                    b.HasIndex("CodigoHash")
+                        .IsUnique();
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("ComercioId", "CreadoEn");
+
+                    b.ToTable("ComprasQr", (string)null);
+                });
+
             modelBuilder.Entity("BilleteraSellos.Dominio.Entidades.Movimiento", b =>
                 {
                     b.Property<int>("Id")
@@ -234,12 +290,21 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("Cantidad")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("CargadoPor")
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
                     b.Property<DateTime>("Fecha")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("Monto")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
 
                     b.Property<int>("TarjetaId")
                         .HasColumnType("integer");
@@ -265,6 +330,10 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
                     b.Property<int>("ComercioId")
                         .HasColumnType("integer");
 
+                    b.Property<decimal?>("CompraMinima")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
                     b.Property<decimal>("CostoPremio")
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
@@ -274,6 +343,10 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
 
                     b.Property<int>("HorasEntreSellos")
                         .HasColumnType("integer");
+
+                    b.Property<decimal?>("MontoPorSello")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
 
                     b.Property<string>("Premio")
                         .IsRequired()
@@ -466,6 +539,26 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
                         .IsRequired();
 
                     b.Navigation("Tarjeta");
+                });
+
+            modelBuilder.Entity("BilleteraSellos.Dominio.Entidades.CompraQr", b =>
+                {
+                    b.HasOne("BilleteraSellos.Dominio.Entidades.Cliente", null)
+                        .WithMany()
+                        .HasForeignKey("ClienteId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("BilleteraSellos.Dominio.Entidades.Comercio", null)
+                        .WithMany()
+                        .HasForeignKey("ComercioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BilleteraSellos.Dominio.Entidades.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("BilleteraSellos.Dominio.Entidades.Movimiento", b =>
