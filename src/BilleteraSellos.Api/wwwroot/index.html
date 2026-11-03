@@ -68,6 +68,32 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
 .compra-estado.ok{color:#1E8A57}.compra-estado.mal{color:#C23A3A}
 .cuenta{font-variant-numeric:tabular-nums;font-size:15px;color:#555}
 .extra-sellos{font-size:13px;font-weight:600;background:rgba(255,255,255,.22);border-radius:8px;padding:6px 10px}
+/* Vista de caja: el cajero ve solo lo del mostrador (QR de la compra, sumar sellos, entregar premio), con botones grandes.
+   El orden se arma con CSS para no mover el HTML del panel. */
+#panel.vista-caja>*{order:3}
+#panel.vista-caja>:first-child{order:0}
+#panel.vista-caja>.caja-alternar{order:1}
+#panel.vista-caja>.caja-compra,#panel.vista-caja>.caja-sellos,#panel.vista-caja>.caja-entregar{order:2}
+#panel.vista-caja>.caja-ver-mas{order:3}
+#panel.vista-caja>.extra{order:4}
+#panel.vista-caja:not(.ver-mas)>.extra{display:none}
+#panel.vista-caja :is(.caja-compra,.caja-sellos,.caja-entregar) :is(button,input){min-height:48px}
+#panel.vista-caja .caja-compra h3{font-size:20px}
+#panel.vista-caja .caja-compra :is(input,button){font-size:20px}
+#panel.vista-caja .caja-compra input{font-variant-numeric:tabular-nums}
+/* Que los botones nunca se recorten: el campo se achica y, si no entra, el botón baja a su propia línea */
+#panel.vista-caja :is(.caja-compra,.caja-sellos,.caja-entregar) .row>button{flex:none}
+#panel.vista-caja .caja-compra .row{flex-wrap:wrap}
+#panel.vista-caja .caja-compra .row>input{flex:1 1 200px}
+#panel.vista-caja .caja-compra .row>button{flex:1 1 auto}
+.caja-ver-mas{width:100%;min-height:48px}
+.caja-ok{transition:opacity .3s}
+@media (min-width:700px){
+  .wrap:has(#v-com:not([hidden]) #panel.vista-caja:not([hidden])){max-width:760px}
+  #panel.vista-caja{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  #panel.vista-caja>*{grid-column:1/-1}
+  #panel.vista-caja>.caja-sellos,#panel.vista-caja>.caja-entregar{grid-column:auto}
+}
 </style>
 </head>
 <body>
@@ -795,6 +821,73 @@ $("#com-cartel").onclick=async()=>{
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"||location.hostname==="127.0.0.1")){
   window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
 }
+
+/* ================= VISTA DE CAJA =================
+   El cajero ve solo lo que usa en el mostrador: QR de la compra, sumar sellos y entregar premio.
+   Lo demás queda en "Ver más". El dueño alterna entre "Vista de caja" y "Panel completo" (se recuerda en este navegador).
+   No se mueve el HTML del panel: se marcan los bloques con clases y el orden lo arma el CSS. */
+const cajaPanel=$("#panel");
+const cajaBloques=[$("#compra-form"),$("#com-buscar").closest(".panel"),$("#com-entregar").closest(".panel")];
+cajaBloques[0].classList.add("caja-compra");cajaBloques[1].classList.add("caja-sellos");cajaBloques[2].classList.add("caja-entregar");
+const cajaAlternar=document.createElement("div");
+cajaAlternar.className="mode caja-alternar";cajaAlternar.setAttribute("role","group");cajaAlternar.setAttribute("aria-label","Vista del panel");cajaAlternar.hidden=true;
+cajaAlternar.innerHTML='<button type="button" id="vista-caja" aria-pressed="false">Vista de caja</button><button type="button" id="vista-completa" aria-pressed="true">Panel completo</button>';
+cajaPanel.firstElementChild.after(cajaAlternar);
+const cajaVerMas=document.createElement("button");
+cajaVerMas.type="button";cajaVerMas.id="caja-ver-mas";cajaVerMas.className="caja-ver-mas";cajaVerMas.hidden=true;
+cajaBloques[2].after(cajaVerMas);
+
+const enVistaCaja=()=>cajaPanel.classList.contains("vista-caja")&&!cajaPanel.hidden&&!$("#v-com").hidden;
+function vistaElegida(){
+  if(!yo||yo.tipo!=="Comercio")return "completo";
+  if(yo.rol!=="Dueno")return "caja";
+  return leer("vistaPanel")==="caja"?"caja":"completo";
+}
+function enfocarMonto(){
+  if(enVistaCaja()&&$("#capa-compra").hidden&&$("#capa-scan").hidden)$("#compra-monto").focus({preventScroll:true});
+}
+function pintarVerMas(){
+  const abierto=cajaPanel.classList.contains("ver-mas");
+  cajaVerMas.textContent=abierto?"Ver menos":"Ver más";
+  cajaVerMas.setAttribute("aria-expanded",abierto);
+}
+function aplicarVista(){
+  if(cajaPanel.hidden||!yo||yo.tipo!=="Comercio"){cajaPanel.classList.remove("vista-caja","ver-mas");cajaAlternar.hidden=cajaVerMas.hidden=true;return}
+  // Todo lo que no es del mostrador queda como "extra" (también lo que se agregue al panel más adelante).
+  for(const el of cajaPanel.children)
+    if(el!==cajaPanel.firstElementChild&&el!==cajaAlternar&&el!==cajaVerMas&&!cajaBloques.includes(el))el.classList.add("extra");
+  const caja=vistaElegida()==="caja";
+  cajaPanel.classList.toggle("vista-caja",caja);
+  if(!caja)cajaPanel.classList.remove("ver-mas");
+  cajaAlternar.hidden=yo.rol!=="Dueno";
+  $("#vista-caja").setAttribute("aria-pressed",caja);$("#vista-completa").setAttribute("aria-pressed",!caja);
+  cajaVerMas.hidden=!caja;
+  // Con la letra grande de la caja, el texto largo no entra en el campo.
+  $("#compra-monto").placeholder=caja?"Monto ($)":"Monto de la compra ($)";
+  pintarVerMas();
+  enfocarMonto();
+}
+$("#vista-caja").onclick=()=>{guardar("vistaPanel","caja");aplicarVista()};
+$("#vista-completa").onclick=()=>{guardar("vistaPanel","completo");aplicarVista()};
+cajaVerMas.onclick=()=>{cajaPanel.classList.toggle("ver-mas");pintarVerMas()};
+// El panel se muestra al iniciar sesión y se oculta al salir: ahí se elige la vista (yo ya está cargado).
+new MutationObserver(aplicarVista).observe(cajaPanel,{attributes:true,attributeFilter:["hidden"]});
+new MutationObserver(aplicarVista).observe($("#v-com"),{attributes:true,attributeFilter:["hidden"]});
+// Al cerrar el QR de la compra, el foco vuelve al monto para la próxima venta.
+new MutationObserver(()=>{if($("#capa-compra").hidden)enfocarMonto()}).observe($("#capa-compra"),{attributes:true,attributeFilter:["hidden"]});
+// En la vista de caja, los mensajes de éxito se borran solos a los 5 s y el foco vuelve al monto.
+function borrarExitoSolo(sel,esExito){
+  const el=$(sel);let reloj=null;
+  new MutationObserver(()=>{
+    clearTimeout(reloj);
+    if(!enVistaCaja()||!el.innerHTML.trim()||!esExito(el))return;
+    enfocarMonto();
+    reloj=setTimeout(()=>{if(enVistaCaja())el.innerHTML=""},5000);
+  }).observe(el,{childList:true,subtree:true,characterData:true});
+}
+borrarExitoSolo("#com-found",el=>!!el.querySelector(".msg")&&!el.querySelector(".bad,form,button,input"));
+borrarExitoSolo("#com-entrega",el=>!!el.querySelector(".good"));
+borrarExitoSolo("#compra-msg",el=>!el.querySelector(".bad"));
 
 /* --- Arranque --- */
 leerEnlaceUnirse();
