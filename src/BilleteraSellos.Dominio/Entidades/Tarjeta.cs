@@ -23,6 +23,12 @@ public class Tarjeta
     public DateTime CreadaEn { get; private set; } = DateTime.UtcNow;
     public DateTime? UltimoSello { get; private set; }
 
+    /// <summary>Cuándo se le pidió la reseña de Google (una sola vez por tarjeta). Null = nunca.</summary>
+    public DateTime? ResenaPedidaEn { get; private set; }
+    /// <summary>Qué contestó el cliente al pedido de reseña. Null = todavía no contestó.</summary>
+    public RespuestaResena? ResenaRespuesta { get; private set; }
+    public DateTime? ResenaRespondidaEn { get; private set; }
+
     public List<Movimiento> Movimientos { get; private set; } = new();
     public List<Canje> Canjes { get; private set; } = new();
 
@@ -102,12 +108,36 @@ public class Tarjeta
 
     public void CambiarPromos(bool acepta) => AceptaPromos = acepta;
 
+    /// <summary>
+    /// Si con esta visita corresponde pedirle la reseña de Google: justo en la visita configurada,
+    /// con link cargado, si acepta promos y si nunca se le pidió.
+    /// </summary>
+    public bool CorrespondePedirResena(int visitas, ProgramaSellos programa, string? linkResena) =>
+        programa.PedirResenaTrasVisitas is { } n && visitas == n
+        && !string.IsNullOrWhiteSpace(linkResena) && AceptaPromos && ResenaPedidaEn is null;
+
+    public void MarcarResenaPedida(DateTime ahora) => ResenaPedidaEn ??= ahora;
+
+    /// <summary>Si el recuadro "Dejá tu reseña" sigue a la vista en la billetera.</summary>
+    public bool ResenaPendiente => ResenaPedidaEn is not null && ResenaRespuesta is null;
+
+    /// <summary>El cliente contesta el pedido de reseña. No se verifica si de verdad la dejó.</summary>
+    public Resultado ResponderResena(RespuestaResena respuesta, DateTime ahora)
+    {
+        if (ResenaPedidaEn is null) return Error.Conflicto("No te pedimos una reseña para este comercio.");
+        ResenaRespuesta = respuesta;
+        ResenaRespondidaEn = ahora;
+        return Resultado.Ok();
+    }
+
     /// <summary>Fechas de las visitas (cada sello sumado), para medir el ritmo del cliente.</summary>
     public List<DateTime> Visitas() =>
         Movimientos.Where(m => m.Tipo == TipoMovimiento.Sello).Select(m => m.Fecha).ToList();
 }
 
 public enum TipoMovimiento { Sello, Canje, Anulacion }
+
+public enum RespuestaResena { Dejada, AhoraNo }
 
 /// <summary>Registro de auditoría: cada sello y cada canje, con quién lo hizo.</summary>
 public class Movimiento
@@ -161,7 +191,7 @@ public class Canje
     }
 }
 
-public enum TipoAviso { Cumpleanos, Reactivacion, TarjetaCompleta, Promo }
+public enum TipoAviso { Cumpleanos, Reactivacion, TarjetaCompleta, Promo, Resena }
 
 /// <summary>Cada aviso enviado a un cliente. Sirve para no repetir y para medir resultados.</summary>
 public class Aviso

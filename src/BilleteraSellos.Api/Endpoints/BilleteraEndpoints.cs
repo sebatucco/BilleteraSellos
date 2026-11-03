@@ -7,6 +7,7 @@ namespace BilleteraSellos.Api.Endpoints;
 public record RegistroPedido(string? Nombre, string? Dni, DateOnly? FechaNacimiento);
 public record SumarTarjetaPedido(string? CodigoComercio);
 public record PromosPedido(bool Acepta);
+public record ResenaPedido(string? Respuesta);
 
 /// <summary>Lo que usa el cliente: registro y billetera.</summary>
 public static class BilleteraEndpoints
@@ -40,6 +41,10 @@ public static class BilleteraEndpoints
 
         g.MapPut("/tarjetas/{tarjetaId:int}/promos", async (int tarjetaId, PromosPedido p, ClaimsPrincipal yo, CambiarPromosHandler h, CancellationToken ct) =>
             (await h.Handle(new CambiarPromos(ClienteId(yo), tarjetaId, p.Acepta), ct)).ARespuesta(Results.NoContent));
+
+        // El cliente contesta el pedido de reseña de Google: "Dejada" o "AhoraNo".
+        g.MapPost("/tarjetas/{tarjetaId:int}/resena", async (int tarjetaId, ResenaPedido p, ClaimsPrincipal yo, ResponderResenaHandler h, CancellationToken ct) =>
+            (await h.Handle(new ResponderResena(ClienteId(yo), tarjetaId, p.Respuesta), ct)).ARespuesta(Results.NoContent));
     }
 
     static int ClienteId(ClaimsPrincipal yo) => yo.Entero(Reclamos.ClienteId)!.Value;

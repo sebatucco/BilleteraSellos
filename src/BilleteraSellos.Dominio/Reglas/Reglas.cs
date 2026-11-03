@@ -176,3 +176,15 @@ public static class Pesos
 
     public static string Formatear(decimal monto) => "$" + monto.ToString("#,0.##", Formato);
 }
+
+/// <summary>El link para pedir reseñas que da Google (Perfil de Empresa → "Pedir reseñas").</summary>
+public static class ResenasGoogle
+{
+    /// <summary>Dominios de Google que sirven para dejar una reseña (incluye los subdominios, como www.google.com o maps.google.com).</summary>
+    public static readonly string[] Dominios = { "g.page", "google.com", "google.com.ar", "goo.gl", "maps.app.goo.gl", "search.google.com" };
+
+    public static bool EsLinkValido(string? url) =>
+        Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && Dominios.Any(d => uri.Host.Equals(d, StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
+}

@@ -8,7 +8,7 @@ public record SumarSelloPedido(int ClienteId, decimal? Monto);
 public record CompraPedido(decimal? Monto);
 public record AltaEnCajaPedido(string? Nombre, string? Dni, string? Telefono, DateOnly? FechaNacimiento);
 public record ProgramaPedido(int SellosNecesarios, string? Premio, decimal CostoPremio, int DiasParaRetirar, int HorasEntreSellos,
-    decimal? MontoPorSello, decimal? CompraMinima);
+    decimal? MontoPorSello, decimal? CompraMinima, string? ResenaGoogleUrl, int? PedirResenaTrasVisitas);
 
 /// <summary>Lo que usa el comercio: la caja y el panel.</summary>
 public static class ComercioEndpoints
@@ -72,7 +72,7 @@ public static class ComercioEndpoints
         // Cambiar las reglas de la tarjeta: solo el dueño.
         priv.MapPut("/{comercioId:int}/programa", async (int comercioId, ProgramaPedido p, ActualizarProgramaHandler h, CancellationToken ct) =>
             (await h.Handle(new ActualizarPrograma(comercioId, p.SellosNecesarios, p.Premio, p.CostoPremio, p.DiasParaRetirar, p.HorasEntreSellos,
-                p.MontoPorSello, p.CompraMinima), ct)).ARespuesta())
+                p.MontoPorSello, p.CompraMinima, p.ResenaGoogleUrl, p.PedirResenaTrasVisitas), ct)).ARespuesta())
             .RequireAuthorization(Politicas.Dueno);
     }
 }

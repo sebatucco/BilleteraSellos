@@ -2,7 +2,7 @@ namespace BilleteraSellos.Aplicacion.Funcionalidades.Comercios;
 
 /// <summary>
 /// Lo común a sumar sellos desde la caja (por DNI o QR del cliente) y desde el QR de la compra:
-/// suma en la tarjeta y, si con esta compra se completa, le avisa al cliente.
+/// suma en la tarjeta, le avisa al cliente si con esta compra se completa y, si es la visita elegida, le pide la reseña de Google.
 /// </summary>
 internal static class Sellado
 {
@@ -11,8 +11,20 @@ internal static class Sellado
         Comercio comercio, Cliente cliente, int cantidad, decimal? monto, DateTime ahora, string? cargadoPor, CancellationToken ct)
     {
         var estabaCompleta = tarjeta.EstaCompleta(programa);
+        // Visitas anteriores (compras con sello), para saber si esta es la visita en la que se pide la reseña.
+        var visitasPrevias = tarjeta.Id == 0 ? 0
+            : await db.Movimientos.CountAsync(m => m.TarjetaId == tarjeta.Id && m.Tipo == TipoMovimiento.Sello, ct);
         var r = tarjeta.SumarSellos(programa, cantidad, monto, ahora, cargadoPor);
         if (!r.Exito) return r.Error!;
+
+        // Pedido de reseña en Google: una sola vez, en la visita que eligió el comercio. Nunca da sellos ni premios.
+        if (tarjeta.CorrespondePedirResena(visitasPrevias + 1, programa, comercio.ResenaGoogleUrl))
+        {
+            var pedido = $"¿Te gustó {comercio.Nombre}? Contanos en Google: {comercio.ResenaGoogleUrl}";
+            await notificador.EnviarAsync(cliente, comercio, TipoAviso.Resena, pedido, ct);
+            db.Avisos.Add(Aviso.Crear(cliente.Id, comercio.Id, TipoAviso.Resena, pedido, ahora));
+            tarjeta.MarcarResenaPedida(ahora);
+        }
 
         // Se avisa solo cuando la compra cruza el umbral, no en cada sello que sobra.
         var seCompleto = !estabaCompleta && tarjeta.EstaCompleta(programa);

@@ -162,5 +162,27 @@ chk "email repetido -> 409" 409 $(code -X POST -H "$J" -d '{"nombreComercio":"X"
 chk "salir" 204 $(code -X POST -H "Authorization: Bearer $NUEVO" $B/auth/salir)
 chk "token tras salir -> 401" 401 $(code -H "Authorization: Bearer $NUEVO" $B/comercios/$NID/resumen)
 
+echo "== Pedido de reseña en Google (panadería)"
+LINK="https://g.page/r/LaEspiga/review"
+chk "dueña panadería entra" 200 $(code -X POST -H "$J" -d '{"email":"panaderia@demo.com","contrasena":"Demo1234"}' $B/auth/comercios/login); PANA=$(tok)
+PROG='"sellosNecesarios":8,"premio":"20% en tu compra","costoPremio":1500,"diasParaRetirar":7,"horasEntreSellos":0'
+chk "link que no es de Google -> 400" 400 $(code -X PUT -H "$J" -H "Authorization: Bearer $PANA" -d "{$PROG,\"resenaGoogleUrl\":\"https://facebook.com/espiga\",\"pedirResenaTrasVisitas\":3}" $B/comercios/3/programa)
+chk "pedir reseña sin link -> 400" 400 $(code -X PUT -H "$J" -H "Authorization: Bearer $PANA" -d "{$PROG,\"resenaGoogleUrl\":\"\",\"pedirResenaTrasVisitas\":3}" $B/comercios/3/programa)
+chk "visita 101 -> 400" 400 $(code -X PUT -H "$J" -H "Authorization: Bearer $PANA" -d "{$PROG,\"resenaGoogleUrl\":\"$LINK\",\"pedirResenaTrasVisitas\":101}" $B/comercios/3/programa)
+chk "configurar link y visita 3" 200 $(code -X PUT -H "$J" -H "Authorization: Bearer $PANA" -d "{$PROG,\"resenaGoogleUrl\":\"$LINK\",\"pedirResenaTrasVisitas\":3}" $B/comercios/3/programa); chk "visita guardada" 3 $(campo .pedirResenaTrasVisitas)
+chk "el programa devuelve el link" "$LINK" $(code -H "Authorization: Bearer $PANA" $B/comercios/3/programa >/dev/null; campo .resenaGoogleUrl)
+chk "alta en caja de Rita" 201 $(code -X POST -H "$J" -H "Authorization: Bearer $PANA" -d '{"nombre":"Rita Paz","dni":"41222333","telefono":"1171112222"}' $B/comercios/3/clientes); RITA_ID=$(campo .clienteId)
+for i in 1 2 3; do chk "sello $i de Rita" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $PANA" -d "{\"clienteId\":$RITA_ID}" $B/comercios/3/sellos); done
+code -X POST -H "$J" -d '{"telefono":"1171112222"}' $B/auth/clientes/codigo >/dev/null; CODR=$(campo .codigoDesarrollo)
+chk "Rita entra a su billetera" 200 $(code -X POST -H "$J" -d "{\"telefono\":\"1171112222\",\"codigo\":\"$CODR\"}" $B/auth/clientes/verificar); RITA=$(tok)
+code -H "Authorization: Bearer $RITA" $B/billetera >/dev/null; TR=$(campo '.tarjetas[] | select(.comercio=="Panadería La Espiga") | .tarjetaId')
+chk "en la visita 3 la billetera pide la reseña" true $(campo '.tarjetas[] | select(.comercio=="Panadería La Espiga") | .pedirResena')
+chk "respuesta inválida -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $RITA" -d '{"respuesta":"Quizas"}' $B/billetera/tarjetas/$TR/resena)
+chk "otro cliente no puede responder por Rita -> 404" 404 $(code -X POST -H "$J" -H "Authorization: Bearer $LUCIA" -d '{"respuesta":"Dejada"}' $B/billetera/tarjetas/$TR/resena)
+chk "Rita contesta Ahora no" 204 $(code -X POST -H "$J" -H "Authorization: Bearer $RITA" -d '{"respuesta":"AhoraNo"}' $B/billetera/tarjetas/$TR/resena)
+chk "ya no se muestra el pedido" false $(code -H "Authorization: Bearer $RITA" $B/billetera >/dev/null; campo '.tarjetas[] | select(.comercio=="Panadería La Espiga") | .pedirResena')
+chk "sello 4 de Rita no vuelve a pedirla" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $PANA" -d "{\"clienteId\":$RITA_ID}" $B/comercios/3/sellos)
+chk "sigue sin pedido" false $(code -H "Authorization: Bearer $RITA" $B/billetera >/dev/null; campo '.tarjetas[] | select(.comercio=="Panadería La Espiga") | .pedirResena')
+
 echo; echo "Resultado: $pass OK, $fail FALLAS"
 [ "$fail" -eq 0 ]

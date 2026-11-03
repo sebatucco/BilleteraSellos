@@ -118,6 +118,14 @@ Authorization: Bearer {{tokenComercio}}
 
 ########## Solo el dueño ##########
 
+### Pedido de reseña en Google: link del Perfil de Empresa y en qué visita se pide (null = no pedir).
+### resenaGoogleUrl: null = no lo cambia, "" = lo borra.
+PUT {{api}}/comercios/3/programa
+Authorization: Bearer {{tokenComercio}}
+Content-Type: application/json
+
+{ "sellosNecesarios": 8, "premio": "20% en tu compra", "costoPremio": 1500, "diasParaRetirar": 7, "horasEntreSellos": 1, "montoPorSello": null, "compraMinima": null, "resenaGoogleUrl": "https://g.page/r/LaEspiga/review", "pedirResenaTrasVisitas": 3 }
+
 ### Cambiar las reglas de la tarjeta
 PUT {{api}}/comercios/1/programa
 Authorization: Bearer {{tokenComercio}}
@@ -160,6 +168,13 @@ Content-Type: application/json
 ### Mi billetera
 GET {{api}}/billetera
 Authorization: Bearer {{tokenCliente}}
+
+### El cliente contesta el pedido de reseña: "Dejada" o "AhoraNo"
+POST {{api}}/billetera/tarjetas/PEGAR_TARJETA_ID/resena
+Authorization: Bearer {{tokenCliente}}
+Content-Type: application/json
+
+{ "respuesta": "AhoraNo" }
 
 ### Sumar la tarjeta de un comercio escaneando su QR
 POST {{api}}/billetera/tarjetas

@@ -11,7 +11,7 @@ public class ComercioConfiguracion : IEntityTypeConfiguration<Comercio>
         b.Property(x => x.Direccion).HasMaxLength(200);
         b.Property(x => x.Codigo).HasMaxLength(40);
         b.Property(x => x.Color).HasMaxLength(9);
-        b.Property(x => x.ResenaGoogleUrl).HasMaxLength(400);
+        b.Property(x => x.ResenaGoogleUrl).HasMaxLength(Comercio.MaxLargoLinkResena);
         b.HasIndex(x => x.Codigo).IsUnique();
 
         // Uno a uno: cada comercio tiene un programa de sellos; la clave foránea está en el programa.
@@ -55,6 +55,7 @@ public class TarjetaConfiguracion : IEntityTypeConfiguration<Tarjeta>
         b.HasMany(x => x.Movimientos).WithOne(m => m.Tarjeta).HasForeignKey(m => m.TarjetaId);
         b.HasMany(x => x.Canjes).WithOne(c => c.Tarjeta).HasForeignKey(c => c.TarjetaId);
         b.Ignore(x => x.Nivel);
+        b.Ignore(x => x.ResenaPendiente);
     }
 }
 
@@ -82,7 +83,8 @@ public class CanjeConfiguracion : IEntityTypeConfiguration<Canje>
 
 public class AvisoConfiguracion : IEntityTypeConfiguration<Aviso>
 {
-    public void Configure(EntityTypeBuilder<Aviso> b) => b.Property(x => x.Mensaje).HasMaxLength(300);
+    // 600: el pedido de reseña incluye el link de Google (hasta 400 caracteres).
+    public void Configure(EntityTypeBuilder<Aviso> b) => b.Property(x => x.Mensaje).HasMaxLength(600);
 }
 
 public class CompraQrConfiguracion : IEntityTypeConfiguration<CompraQr>

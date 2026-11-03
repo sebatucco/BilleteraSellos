@@ -36,6 +36,10 @@ input,select{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;bo
 .stamp.on{background:#fff;border:2px solid #fff;color:var(--c);font-weight:800}
 .tier{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:99px;background:rgba(255,255,255,.22)}
 .card a{color:#fff}.card button{background:#fff;color:var(--c)}
+/* Pedido de reseña dentro de la tarjeta (texto blanco sobre el color del comercio) */
+.card .resena{background:rgba(255,255,255,.16);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.card .btn-resena{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:8px 14px;border-radius:10px;background:#fff;color:var(--c);font-weight:600;text-decoration:none}
+.card .resena .secundario{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.7)}
 .code{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.12em}
 .item{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}.item:first-child{border-top:0}
 .item .grow{flex:1;min-width:0}
@@ -190,6 +194,10 @@ label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute
           <label>Compra mínima $ (opcional)<input id="p-minima" inputmode="decimal" autocomplete="off" placeholder="Ej: 5000"></label>
         </div>
         <p class="hint" id="p-ejemplo"></p>
+        <!-- Pedido de reseña en Google: una sola vez, en la visita que elija el dueño. Nunca da sellos ni premios. -->
+        <label>Link de reseñas de Google<input id="p-resena-link" type="url" inputmode="url" autocomplete="off" placeholder="https://g.page/r/..."></label>
+        <label>Pedir reseña en la visita N (vacío = no pedir)<input id="p-resena-visita" type="number" min="1" max="100" placeholder="Ej: 3"></label>
+        <p class="hint">El link lo da Google: en tu Perfil de Empresa de Google tocá «Pedir reseñas» y copiá el link. Se le pide una sola vez a cada cliente, en esa visita. Google no permite dar premios a cambio de reseñas.</p>
         <button class="primary">Guardar reglas</button>
         <p class="small" id="p-msg"></p>
       </form>
@@ -328,7 +336,7 @@ async function cargarBilletera(){
         <div class="row between"><b style="font-size:18px">${esc(t.comercio)}</b><span class="tier">${t.nivel}</span></div>
         <div class="stamps">${st}</div>${extraSellos(t)}${pend}
         ${t.completa?`<button data-canjear="${t.tarjetaId}">Canjear: ${esc(t.premio)}</button>`:`<p class="small">${t.sellosNecesarios-t.sellosActuales===1?"Te falta 1":"Te faltan "+(t.sellosNecesarios-t.sellosActuales)} para: ${esc(t.premio)}</p>`}
-        ${t.resenaGoogleUrl?`<a class="small" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener">Dejar una reseña en Google</a>`:""}
+        ${t.pedirResena?recuadroResena(t):t.resenaGoogleUrl?`<a class="small" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener">Dejar una reseña en Google</a>`:""}
       </div>`}).join("")+
     `<div class="panel"><h3>Comercios adheridos</h3>${todos.filter(c=>!tiene.has(c.id)).map(c=>`<div class="item"><div class="grow"><b>${esc(c.nombre)}</b><p class="small muted">${esc(c.rubro)} · ${esc(c.premio)}</p></div><button data-sumar="${esc(c.codigo)}">Sumar</button></div>`).join("")||'<p class="small muted">Ya tenés todas las tarjetas.</p>'}</div>`+
     "";
@@ -412,13 +420,17 @@ async function cargarPrograma(){
   const p=await com("/programa");
   $("#p-sellos").value=p.sellosNecesarios;$("#p-costo").value=p.costoPremio;$("#p-dias").value=p.diasParaRetirar;$("#p-horas").value=p.horasEntreSellos;$("#p-premio").value=p.premio;
   $("#p-monto-sello").value=p.montoPorSello??"";$("#p-minima").value=p.compraMinima??"";
+  $("#p-resena-link").value=p.resenaGoogleUrl??"";$("#p-resena-visita").value=p.pedirResenaTrasVisitas??"";
   ejemploReglas();
 }
 $("#programa").onsubmit=async e=>{
   e.preventDefault();
   const montoPorSello=parsearMonto($("#p-monto-sello").value), compraMinima=parsearMonto($("#p-minima").value);
   if(montoPorSello===undefined||compraMinima===undefined){err("#p-msg","Escribí los montos con números, por ejemplo 10000.");return}
-  try{await com("/programa",{method:"PUT",body:{sellosNecesarios:+$("#p-sellos").value,premio:$("#p-premio").value,costoPremio:+$("#p-costo").value,diasParaRetirar:+$("#p-dias").value,horasEntreSellos:+$("#p-horas").value,montoPorSello,compraMinima}});
+  // Link vacío = se borra; visita vacía = no se pide la reseña.
+  const resenaGoogleUrl=$("#p-resena-link").value.trim(), visita=$("#p-resena-visita").value.trim();
+  const pedirResenaTrasVisitas=visita===""?null:Math.trunc(+visita);
+  try{await com("/programa",{method:"PUT",body:{sellosNecesarios:+$("#p-sellos").value,premio:$("#p-premio").value,costoPremio:+$("#p-costo").value,diasParaRetirar:+$("#p-dias").value,horasEntreSellos:+$("#p-horas").value,montoPorSello,compraMinima,resenaGoogleUrl,pedirResenaTrasVisitas}});
     $("#p-msg").innerHTML='<span class="good">Guardado.</span>';calcular()}
   catch(x){err("#p-msg",x.message)}
 };
@@ -455,6 +467,29 @@ document.addEventListener("click",async e=>{
     const destino=t.dataset.sello?"#com-found":t.dataset.activo?"#eq-msg":null;
     if(destino)err(destino,x.message);else alert(x.message);
   }
+});
+
+/* ===== Pedido de reseña en Google (billetera) =====
+   El comercio elige en qué visita se pide, una sola vez. Al tocar el link se abre Google y se marca como "Dejada";
+   "Ahora no" lo oculta. No se verifica si la dejó: la reseña no da sellos ni premios. */
+function recuadroResena(t){
+  return `<div class="resena" role="group" aria-label="Reseña en Google">
+    <p class="small"><b>¿Te gustó ${esc(t.comercio)}?</b> Dejá tu reseña en Google, nos ayuda un montón.</p>
+    <div class="row"><a class="btn-resena" href="${esc(t.resenaGoogleUrl)}" target="_blank" rel="noopener" data-resena-dejada="${t.tarjetaId}">Dejar reseña</a>
+    <button type="button" class="secundario" data-resena-no="${t.tarjetaId}">Ahora no</button></div>
+  </div>`;
+}
+async function responderResena(tarjetaId,respuesta){
+  try{await api(`/billetera/tarjetas/${tarjetaId}/resena`,{token:tokCli,method:"POST",body:{respuesta}})}
+  catch(x){avisoBilletera(x.message,"bad")}
+  cargarBilletera();
+}
+document.addEventListener("click",e=>{
+  const dejada=e.target.closest("a[data-resena-dejada]");
+  // No se frena el link: se abre Google en otra pestaña y en paralelo se guarda la respuesta.
+  if(dejada){responderResena(dejada.dataset.resenaDejada,"Dejada");return}
+  const no=e.target.closest("button[data-resena-no]");
+  if(no){no.disabled=true;responderResena(no.dataset.resenaNo,"AhoraNo")}
 });
 
 /* ===== Recuperar y cambiar contraseña ===== */

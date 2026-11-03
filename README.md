@@ -143,6 +143,9 @@ pruebas/humo.sh                     Prueba de punta a punta de la API (la corre 
 | Saludo de cumpleaños y "te extrañamos", sin repetir en 14 días | `Aplicacion/Funcionalidades/Avisos` (lo dispara `Api/Tareas/AvisosAutomaticos.cs`) |
 | El cliente acepta o no promos de cada comercio | `PUT /api/billetera/tarjetas/{tarjetaId}/promos` |
 | Reseña de Google como link, sin premio a cambio | `Comercio.ResenaGoogleUrl` |
+| Pedido automático de reseña en Google: una sola vez por cliente, en la visita que elige el dueño, solo si acepta promos y nunca a cambio de sellos o premios | `Comercio.ConfigurarResenas()`, `Tarjeta.CorrespondePedirResena()` y `Sellado.cs` |
+| El link de reseñas tiene que ser de Google (g.page, google.com, goo.gl, maps.app.goo.gl, search.google.com) | `ResenasGoogle.EsLinkValido()` |
+| El cliente contesta "Dejada" o "Ahora no" y el pedido deja de aparecer en su billetera | `POST /api/billetera/tarjetas/{tarjetaId}/resena` |
 
 ## Arquitectura
 

@@ -34,6 +34,35 @@ public class Comercio
         ResenaGoogleUrl = resenaGoogleUrl,
         Programa = programa,
     };
+
+    public const int MaxLargoLinkResena = 400;
+
+    /// <summary>
+    /// Configura el pedido de reseñas en Google: el link y en qué visita se pide (null = no pedir).
+    /// El link null no lo cambia; vacío lo borra. Pedir reseñas necesita un link cargado.
+    /// La reseña nunca da sellos ni premios (lo prohíben las políticas de Google).
+    /// </summary>
+    public Resultado ConfigurarResenas(string? link, int? pedirTrasVisitas)
+    {
+        if (Programa is null) return Error.NoEncontrado("El comercio no tiene tarjeta configurada.");
+        var nuevoLink = ResenaGoogleUrl;
+        if (link is not null)
+        {
+            var limpio = link.Trim();
+            if (limpio.Length == 0) nuevoLink = null;
+            else if (limpio.Length > MaxLargoLinkResena || !ResenasGoogle.EsLinkValido(limpio))
+                return Error.Validacion("El link tiene que ser de Google (el que te da Google para pedir reseñas).");
+            else nuevoLink = limpio;
+        }
+        if (pedirTrasVisitas is { } n)
+        {
+            if (n is < 1 or > 100) return Error.Validacion("El pedido de reseña tiene que ser entre la visita 1 y la 100.");
+            if (nuevoLink is null) return Error.Validacion("Cargá primero el link de reseñas de Google del comercio.");
+        }
+        ResenaGoogleUrl = nuevoLink;
+        Programa.PedirResenaTrasVisitas = pedirTrasVisitas;
+        return Resultado.Ok();
+    }
 }
 
 /// <summary>Las reglas de la tarjeta de sellos de un comercio.</summary>
@@ -57,6 +86,8 @@ public class ProgramaSellos
     public decimal? MontoPorSello { get; private set; }
     /// <summary>Monto mínimo de la compra para sumar sellos. Null = sin mínimo.</summary>
     public decimal? CompraMinima { get; private set; }
+    /// <summary>En qué visita (compra con sello) se le pide la reseña de Google al cliente, una sola vez. Null = no se pide.</summary>
+    public int? PedirResenaTrasVisitas { get; internal set; }
 
     /// <summary>Tope de sellos de una sola compra: frena errores de tipeo en el monto (35.000.000 en vez de 35.000).</summary>
     public const int MaxSellosPorCompra = 30;
