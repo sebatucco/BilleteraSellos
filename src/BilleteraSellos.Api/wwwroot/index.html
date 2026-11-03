@@ -374,7 +374,7 @@ async function cargarResumen(){
   calcular();
 }
 function tarjetaEnCaja(c){
-  return `<div class="msg stack"><div class="row between"><b>${esc(c.nombre)}</b><span class="pill">${c.nivel}</span></div><p class="small muted">${c.tieneTarjeta?`${c.sellosActuales} de ${c.sellosNecesarios} sellos`:"Todavía no tiene tu tarjeta: se crea con este sello"}</p><button class="primary" data-sello="${c.clienteId}">Sumar sellos</button></div>`;
+  return `<div class="msg stack"><div class="row between"><b>${esc(c.nombre)}</b><span class="pill">${c.nivel}</span></div><p class="small muted">${c.tieneTarjeta?`${c.sellosActuales} de ${c.sellosNecesarios} sellos`:"Todavía no tiene tu tarjeta: se crea con este sello"}</p><button class="primary" data-sello="${c.clienteId}">Sumar sellos</button>${bloquePapel(c)}</div>`;
 }
 $("#com-buscar").onsubmit=async e=>{
   e.preventDefault();
@@ -455,6 +455,32 @@ document.addEventListener("click",async e=>{
     const destino=t.dataset.sello?"#com-found":t.dataset.activo?"#eq-msg":null;
     if(destino)err(destino,x.message);else alert(x.message);
   }
+});
+
+/* ===== Tarjeta de papel: cargar los sellos que el cliente ya tenía en el cartón ===== */
+function bloquePapel(c){
+  return `<button type="button" class="link" data-papel-abrir>Cargar tarjeta de papel</button>
+    <form class="stack" data-papel-form="${c.clienteId}" hidden>
+      <label>¿Cuántos sellos tenía en la tarjeta de papel?<input type="number" inputmode="numeric" min="1" max="${(c.sellosNecesarios||10)*2}" data-papel-sellos aria-label="Sellos de la tarjeta de papel"></label>
+      <button>Cargar</button>
+      <p class="small" data-papel-msg></p>
+    </form>`;
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-papel-abrir]");if(!b)return;
+  const f=b.parentElement.querySelector("[data-papel-form]");f.hidden=!f.hidden;
+  if(!f.hidden)f.querySelector("[data-papel-sellos]").focus();
+});
+document.addEventListener("submit",async e=>{
+  const f=e.target.closest("[data-papel-form]");if(!f)return;
+  e.preventDefault();
+  const msg=f.querySelector("[data-papel-msg]"), n=parseInt(f.querySelector("[data-papel-sellos]").value,10);
+  if(!Number.isInteger(n)||n<1){msg.innerHTML='<span class="bad">Escribí cuántos sellos tenía, por ejemplo 4.</span>';return}
+  try{
+    const r=await com(`/clientes/${f.dataset.papelForm}/papel`,{method:"POST",body:{sellos:n}});
+    $("#com-found").innerHTML=`<p class="msg">Listo: cargamos ${n} ${n===1?"sello":"sellos"} de su tarjeta de papel (${r.sellosActuales} de ${r.sellosNecesarios}).${r.tarjetaCompleta?" ¡Tarjeta completa! Ya puede canjear el premio.":""} Ya podés tirar el cartón.</p>`;
+    cargarResumen();
+  }catch(x){msg.innerHTML=`<span class="bad">${esc(x.message)}</span>`}
 });
 
 /* ===== Recuperar y cambiar contraseña ===== */

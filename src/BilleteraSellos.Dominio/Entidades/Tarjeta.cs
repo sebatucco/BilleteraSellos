@@ -82,6 +82,27 @@ public class Tarjeta
         return Resultado.Ok();
     }
 
+    /// <summary>
+    /// Carga los sellos que el cliente ya tenía en la tarjeta de cartón del comercio. Se puede hacer una sola vez por tarjeta.
+    /// No cuenta como visita (no cambia el ritmo del cliente) ni respeta la espera entre sellos.
+    /// </summary>
+    public Resultado MigrarSellosDePapel(ProgramaSellos programa, int sellos, DateTime ahora, string? cargadoPor)
+    {
+        var max = MaxSellosDePapel(programa);
+        if (sellos < 1 || sellos > max) return Error.Validacion($"Podés cargar entre 1 y {max} sellos de la tarjeta de papel.");
+        if (TienePapelMigrado) return Error.Conflicto("A esta tarjeta ya se le cargaron los sellos de papel.");
+
+        SellosActuales += sellos;
+        SellosTotales += sellos;
+        Movimientos.Add(Movimiento.Nuevo(TipoMovimiento.Migracion, ahora, cargadoPor, sellos));
+        return Resultado.Ok();
+    }
+
+    /// <summary>Tope de sellos de papel: hasta dos tarjetas llenas (por si tenía una completa sin canjear).</summary>
+    public static int MaxSellosDePapel(ProgramaSellos programa) => programa.SellosNecesarios * 2;
+
+    public bool TienePapelMigrado => Movimientos.Any(m => m.Tipo == TipoMovimiento.Migracion);
+
     /// <summary>Si se puede canjear el premio ahora. Sirve para no generar un código de canje en vano.</summary>
     public Resultado PuedeCanjear(ProgramaSellos programa) =>
         EstaCompleta(programa)
@@ -107,7 +128,8 @@ public class Tarjeta
         Movimientos.Where(m => m.Tipo == TipoMovimiento.Sello).Select(m => m.Fecha).ToList();
 }
 
-public enum TipoMovimiento { Sello, Canje, Anulacion }
+/// <summary>Migracion: sellos cargados de una tarjeta de papel (no es una visita).</summary>
+public enum TipoMovimiento { Sello, Canje, Anulacion, Migracion }
 
 /// <summary>Registro de auditoría: cada sello y cada canje, con quién lo hizo.</summary>
 public class Movimiento
