@@ -132,6 +132,7 @@ pruebas/humo.sh                     Prueba de punta a punta de la API (la corre 
 | Los sellos que pasan del premio quedan guardados para la vuelta siguiente (y se puede canjear más de un premio) | `Tarjeta.SumarSellos()` y `Tarjeta.Canjear()` |
 | Aviso "completaste tu tarjeta" solo cuando la compra la completa, no con cada sello de más | `Aplicacion/Funcionalidades/Comercios/Sellado.cs` |
 | QR de la compra: lo genera la caja con el monto, sirve una vez y vence a los 3 minutos | `POST /api/comercios/{id}/compras` → `POST /api/billetera/compras/{codigo}` |
+| Tarjeta de papel: la caja carga los sellos que el cliente traía en el cartón (entre 1 y dos tarjetas llenas, una sola vez por tarjeta; no cuenta como visita) | `POST /api/comercios/{id}/clientes/{clienteId}/papel` → `Tarjeta.MigrarSellosDePapel` |
 | La caja ve si el cliente ya escaneó el QR, o lo anula | `GET /api/comercios/{id}/compras/{codigo}` y `.../anular` |
 | Si la espera entre sellos no deja sumar, el QR no se consume | `UsarQrCompraHandler` |
 | Canje con código de 6 caracteres, sin letras confusas, con vencimiento | `POST /api/billetera/tarjetas/{tarjetaId}/canjear` |

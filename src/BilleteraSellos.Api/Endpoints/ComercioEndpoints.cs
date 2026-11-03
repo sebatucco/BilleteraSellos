@@ -6,6 +6,7 @@ namespace BilleteraSellos.Api.Endpoints;
 
 public record SumarSelloPedido(int ClienteId, decimal? Monto);
 public record CompraPedido(decimal? Monto);
+public record PapelPedido(int Sellos);
 public record AltaEnCajaPedido(string? Nombre, string? Dni, string? Telefono, DateOnly? FechaNacimiento);
 public record ProgramaPedido(int SellosNecesarios, string? Premio, decimal CostoPremio, int DiasParaRetirar, int HorasEntreSellos,
     decimal? MontoPorSello, decimal? CompraMinima, string? ResenaGoogleUrl, int? PedirResenaTrasVisitas);
@@ -37,6 +38,10 @@ public static class ComercioEndpoints
 
         priv.MapPost("/{comercioId:int}/sellos", async (int comercioId, SumarSelloPedido p, ClaimsPrincipal u, SumarSelloHandler h, CancellationToken ct) =>
             (await h.Handle(new SumarSello(comercioId, p.ClienteId, u.Identity?.Name, p.Monto), ct)).ARespuesta());
+
+        // Tarjeta de papel: carga los sellos que el cliente ya tenía en el cartón (una vez por tarjeta).
+        priv.MapPost("/{comercioId:int}/clientes/{clienteId:int}/papel", async (int comercioId, int clienteId, PapelPedido p, ClaimsPrincipal u, MigrarTarjetaDePapelHandler h, CancellationToken ct) =>
+            (await h.Handle(new MigrarTarjetaDePapel(comercioId, clienteId, p.Sellos, u.Identity?.Name), ct)).ARespuesta());
 
         // QR de la compra: la caja escribe el monto y el cliente escanea el QR con su billetera (pague como pague).
         priv.MapPost("/{comercioId:int}/compras", async (int comercioId, CompraPedido? p, ClaimsPrincipal u, GenerarQrCompraHandler h, CancellationToken ct) =>

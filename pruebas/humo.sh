@@ -183,6 +183,17 @@ chk "Rita contesta Ahora no" 204 $(code -X POST -H "$J" -H "Authorization: Beare
 chk "ya no se muestra el pedido" false $(code -H "Authorization: Bearer $RITA" $B/billetera >/dev/null; campo '.tarjetas[] | select(.comercio=="Panadería La Espiga") | .pedirResena')
 chk "sello 4 de Rita no vuelve a pedirla" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $PANA" -d "{\"clienteId\":$RITA_ID}" $B/comercios/3/sellos)
 chk "sigue sin pedido" false $(code -H "Authorization: Bearer $RITA" $B/billetera >/dev/null; campo '.tarjetas[] | select(.comercio=="Panadería La Espiga") | .pedirResena')
+echo "== Tarjeta de papel (verdulería)"
+# La sección "Contraseñas" dejó la contraseña de la verdulería en Verdu2026.
+chk "verdulería entra" 200 $(code -X POST -H "$J" -d '{"email":"verduleria@demo.com","contrasena":"Verdu2026"}' $B/auth/comercios/login); VP=$(tok)
+chk "alta en caja para papel" 201 $(code -X POST -H "$J" -H "Authorization: Bearer $VP" -d '{"nombre":"Rosa Papel","dni":"41555666","telefono":"1155566677"}' $B/comercios/4/clientes); CPAP=$(campo .clienteId)
+chk "papel con 0 sellos -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $VP" -d '{"sellos":0}' $B/comercios/4/clientes/$CPAP/papel)
+chk "papel con 999 sellos -> 400" 400 $(code -X POST -H "$J" -H "Authorization: Bearer $VP" -d '{"sellos":999}' $B/comercios/4/clientes/$CPAP/papel)
+chk "carga 4 sellos de papel" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $VP" -d '{"sellos":4}' $B/comercios/4/clientes/$CPAP/papel)
+chk "tarjeta nueva con 4 sellos" "4 true 4" "$(campo '"\(.sellosActuales) \(.tarjetaNueva) \(.sellosSumados)"')"
+chk "segunda carga de papel -> 409" 409 $(code -X POST -H "$J" -H "Authorization: Bearer $VP" -d '{"sellos":2}' $B/comercios/4/clientes/$CPAP/papel)
+chk "después suma sellos normales" 200 $(code -X POST -H "$J" -H "Authorization: Bearer $VP" -d "{\"clienteId\":$CPAP}" $B/comercios/4/sellos); chk "queda en 5" 5 $(campo .sellosActuales)
+chk "otro comercio no carga papel -> 403" 403 $(code -X POST -H "$J" -H "Authorization: Bearer $VP" -d '{"sellos":2}' $B/comercios/1/clientes/1/papel)
 
 echo; echo "Resultado: $pass OK, $fail FALLAS"
 [ "$fail" -eq 0 ]
