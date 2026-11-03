@@ -41,8 +41,8 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
 
                     b.Property<string>("Mensaje")
                         .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)");
 
                     b.Property<int>("Tipo")
                         .HasColumnType("integer");
@@ -348,6 +348,9 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
 
+                    b.Property<int?>("PedirResenaTrasVisitas")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Premio")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -426,6 +429,15 @@ namespace BilleteraSellos.Infraestructura.Persistencia.Migraciones
 
                     b.Property<DateTime>("CreadaEn")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ResenaPedidaEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ResenaRespondidaEn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ResenaRespuesta")
+                        .HasColumnType("integer");
 
                     b.Property<int>("SellosActuales")
                         .HasColumnType("integer");
