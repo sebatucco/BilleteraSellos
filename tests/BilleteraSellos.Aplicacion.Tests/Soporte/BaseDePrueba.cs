@@ -52,10 +52,11 @@ public abstract class BaseDePrueba : IDisposable
 
     protected async Task<Comercio> ComercioAsync(
         string nombre = "Café Tostado", string codigo = "cafe-tostado", int sellos = 10,
-        int horasEntreSellos = 0, int diasParaRetirar = 7, string premio = "Café gratis")
+        int horasEntreSellos = 0, int diasParaRetirar = 7, string premio = "Café gratis",
+        decimal? montoPorSello = null, decimal? compraMinima = null)
     {
         var programa = ProgramaSellos.Nuevo(sellos, premio, 900);
-        Assert.True(programa.Actualizar(sellos, premio, 900, diasParaRetirar, horasEntreSellos).Exito);
+        Assert.True(programa.Actualizar(sellos, premio, 900, diasParaRetirar, horasEntreSellos, montoPorSello, compraMinima).Exito);
         var comercio = Comercio.Crear(nombre, "Cafetería", "Av. Siempreviva 742", codigo, null, programa);
         Db.Comercios.Add(comercio);
         await Db.SaveChangesAsync();

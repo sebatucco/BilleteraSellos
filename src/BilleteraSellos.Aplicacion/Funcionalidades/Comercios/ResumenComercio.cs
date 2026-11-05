@@ -19,7 +19,8 @@ public sealed class ResumenComercioHandler(IAppDbContext db, IReloj reloj) : IQu
 
         return new Resumen(
             tarjetas.Count,
-            tarjetas.Sum(t => t.Movimientos.Count(m => m.Tipo == TipoMovimiento.Sello && m.Fecha >= desde)),
+            // Una compra puede dar varios sellos: se suma la cantidad, no los movimientos.
+            tarjetas.Sum(t => t.Movimientos.Where(m => m.Tipo == TipoMovimiento.Sello && m.Fecha >= desde).Sum(m => m.Cantidad)),
             tarjetas.Count(t => Enfriamiento.EstaEnfriandose(Enfriamiento.Evaluar(t.Visitas(), ahora))),
             tarjetas.Sum(t => t.Canjes.Count(c => c.EstaPendiente(ahora))));
     }

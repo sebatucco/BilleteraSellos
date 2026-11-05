@@ -1,4 +1,5 @@
 using BilleteraSellos.Dominio.Comun;
+using BilleteraSellos.Dominio.Reglas;
 
 namespace BilleteraSellos.Dominio.Entidades;
 
@@ -33,6 +34,35 @@ public class Comercio
         ResenaGoogleUrl = resenaGoogleUrl,
         Programa = programa,
     };
+
+    public const int MaxLargoLinkResena = 400;
+
+    /// <summary>
+    /// Configura el pedido de reseñas en Google: el link y en qué visita se pide (null = no pedir).
+    /// El link null no lo cambia; vacío lo borra. Pedir reseñas necesita un link cargado.
+    /// La reseña nunca da sellos ni premios (lo prohíben las políticas de Google).
+    /// </summary>
+    public Resultado ConfigurarResenas(string? link, int? pedirTrasVisitas)
+    {
+        if (Programa is null) return Error.NoEncontrado("El comercio no tiene tarjeta configurada.");
+        var nuevoLink = ResenaGoogleUrl;
+        if (link is not null)
+        {
+            var limpio = link.Trim();
+            if (limpio.Length == 0) nuevoLink = null;
+            else if (limpio.Length > MaxLargoLinkResena || !ResenasGoogle.EsLinkValido(limpio))
+                return Error.Validacion("El link tiene que ser de Google (el que te da Google para pedir reseñas).");
+            else nuevoLink = limpio;
+        }
+        if (pedirTrasVisitas is { } n)
+        {
+            if (n is < 1 or > 100) return Error.Validacion("El pedido de reseña tiene que ser entre la visita 1 y la 100.");
+            if (nuevoLink is null) return Error.Validacion("Cargá primero el link de reseñas de Google del comercio.");
+        }
+        ResenaGoogleUrl = nuevoLink;
+        Programa.PedirResenaTrasVisitas = pedirTrasVisitas;
+        return Resultado.Ok();
+    }
 }
 
 /// <summary>Las reglas de la tarjeta de sellos de un comercio.</summary>
@@ -52,20 +82,58 @@ public class ProgramaSellos
     public int DiasParaRetirar { get; private set; } = 7;
     /// <summary>Horas mínimas entre dos sellos del mismo cliente (evita sellar dos veces seguidas).</summary>
     public int HorasEntreSellos { get; private set; } = 1;
+    /// <summary>"1 sello cada $X". Null = 1 sello por compra, sin importar el monto.</summary>
+    public decimal? MontoPorSello { get; private set; }
+    /// <summary>Monto mínimo de la compra para sumar sellos. Null = sin mínimo.</summary>
+    public decimal? CompraMinima { get; private set; }
+    /// <summary>En qué visita (compra con sello) se le pide la reseña de Google al cliente, una sola vez. Null = no se pide.</summary>
+    public int? PedirResenaTrasVisitas { get; internal set; }
 
-    public static ProgramaSellos Nuevo(int sellos, string premio, decimal costo) =>
-        new() { SellosNecesarios = sellos, Premio = premio, CostoPremio = costo };
+    /// <summary>Tope de sellos de una sola compra: frena errores de tipeo en el monto (35.000.000 en vez de 35.000).</summary>
+    public const int MaxSellosPorCompra = 30;
+
+    public static ProgramaSellos Nuevo(int sellos, string premio, decimal costo, decimal? montoPorSello = null, decimal? compraMinima = null) =>
+        new() { SellosNecesarios = sellos, Premio = premio, CostoPremio = costo, MontoPorSello = montoPorSello, CompraMinima = compraMinima };
 
     /// <summary>Cambia las reglas de la tarjeta. Días y horas se acotan a valores razonables.</summary>
-    public Resultado Actualizar(int sellos, string? premio, decimal costo, int diasParaRetirar, int horasEntreSellos)
+    public Resultado Actualizar(int sellos, string? premio, decimal costo, int diasParaRetirar, int horasEntreSellos,
+        decimal? montoPorSello = null, decimal? compraMinima = null)
     {
         if (sellos is < 3 or > 30) return Error.Validacion("La tarjeta tiene que pedir entre 3 y 30 sellos.");
         if (string.IsNullOrWhiteSpace(premio)) return Error.Validacion("Escribí cuál es el premio.");
+        if (montoPorSello is <= 0) return Error.Validacion("El monto por sello tiene que ser mayor a cero.");
+        if (compraMinima is < 0) return Error.Validacion("La compra mínima no puede ser negativa.");
         SellosNecesarios = sellos;
         Premio = premio.Trim();
         CostoPremio = costo;
         DiasParaRetirar = Math.Clamp(diasParaRetirar, 1, 365);
         HorasEntreSellos = Math.Clamp(horasEntreSellos, 0, 72);
+        MontoPorSello = montoPorSello;
+        CompraMinima = compraMinima;
         return Resultado.Ok();
+    }
+
+    /// <summary>
+    /// Cuántos sellos da una compra según las reglas: 1 por compra, o 1 cada <see cref="MontoPorSello"/>,
+    /// siempre que se llegue a la <see cref="CompraMinima"/>. Si el programa depende del monto, el monto es obligatorio.
+    /// </summary>
+    public Resultado<int> SellosPorCompra(decimal? monto)
+    {
+        if (monto is < 0) return Error.Validacion("El monto no puede ser negativo.");
+        if ((MontoPorSello is not null || CompraMinima is not null) && monto is null)
+            return Error.Validacion("Escribí el monto de la compra.");
+        if (CompraMinima is { } minimo && monto < minimo)
+            return Error.Validacion($"La compra mínima para sumar sellos es de {Pesos.Formatear(minimo)}.");
+
+        var sellos = 1;
+        if (MontoPorSello is { } porSello)
+        {
+            var calculado = Math.Floor(monto!.Value / porSello);
+            if (calculado < 1) return Error.Validacion($"Con ese monto no alcanza para un sello (1 sello cada {Pesos.Formatear(porSello)}).");
+            if (calculado > MaxSellosPorCompra)
+                return Error.Validacion($"Esa compra daría {calculado:0} sellos. Revisá el monto (máximo {MaxSellosPorCompra} por compra).");
+            sellos = (int)calculado;
+        }
+        return sellos;
     }
 }

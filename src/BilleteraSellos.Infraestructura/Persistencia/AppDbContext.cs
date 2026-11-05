@@ -14,6 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Sesion> Sesiones => Set<Sesion>();
     public DbSet<CodigoVerificacion> CodigosVerificacion => Set<CodigoVerificacion>();
     public DbSet<TokenRestablecimiento> TokensRestablecimiento => Set<TokenRestablecimiento>();
+    public DbSet<CompraQr> ComprasQr => Set<CompraQr>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

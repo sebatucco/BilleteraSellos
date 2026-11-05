@@ -23,6 +23,12 @@ public class Tarjeta
     public DateTime CreadaEn { get; private set; } = DateTime.UtcNow;
     public DateTime? UltimoSello { get; private set; }
 
+    /// <summary>Cuándo se le pidió la reseña de Google (una sola vez por tarjeta). Null = nunca.</summary>
+    public DateTime? ResenaPedidaEn { get; private set; }
+    /// <summary>Qué contestó el cliente al pedido de reseña. Null = todavía no contestó.</summary>
+    public RespuestaResena? ResenaRespuesta { get; private set; }
+    public DateTime? ResenaRespondidaEn { get; private set; }
+
     public List<Movimiento> Movimientos { get; private set; } = new();
     public List<Canje> Canjes { get; private set; } = new();
 
@@ -56,28 +62,60 @@ public class Tarjeta
 
     public bool EstaCompleta(ProgramaSellos programa) => SellosActuales >= programa.SellosNecesarios;
 
-    /// <summary>Suma un sello por una compra. No suma si la tarjeta está completa o si el último sello es muy reciente.</summary>
-    public Resultado SumarSello(ProgramaSellos programa, DateTime ahora, string? cargadoPor)
+    /// <summary>Premios que se pueden canjear ahora (los sellos que sobran quedan para la próxima vuelta).</summary>
+    public int PremiosDisponibles(ProgramaSellos programa) =>
+        programa.SellosNecesarios > 0 ? SellosActuales / programa.SellosNecesarios : 0;
+
+    /// <summary>Suma un sello por una compra, sin monto. Atajo de <see cref="SumarSellos"/>.</summary>
+    public Resultado SumarSello(ProgramaSellos programa, DateTime ahora, string? cargadoPor) =>
+        SumarSellos(programa, 1, null, ahora, cargadoPor);
+
+    /// <summary>
+    /// Suma los sellos de una compra. Los que pasan del premio quedan guardados para la vuelta siguiente.
+    /// No suma si el último sello es muy reciente (regla de horas entre sellos).
+    /// </summary>
+    public Resultado SumarSellos(ProgramaSellos programa, int cantidad, decimal? monto, DateTime ahora, string? cargadoPor)
     {
-        if (EstaCompleta(programa))
-            return Error.Conflicto("La tarjeta ya está completa. El cliente tiene que canjear el premio antes de sumar más sellos.");
+        if (cantidad < 1) return Error.Validacion("La cantidad de sellos tiene que ser al menos 1.");
         if (UltimoSello is { } ultimo && ahora - ultimo < TimeSpan.FromHours(programa.HorasEntreSellos))
             return Error.Conflicto($"Ya se sumó un sello hace menos de {programa.HorasEntreSellos} h. Si es una compra nueva, esperá o cambiá la regla del programa.");
 
-        SellosActuales++;
-        SellosTotales++;
+        SellosActuales += cantidad;
+        SellosTotales += cantidad;
         UltimoSello = ahora;
-        Movimientos.Add(Movimiento.Nuevo(TipoMovimiento.Sello, ahora, cargadoPor));
+        // Un movimiento por compra: así las visitas siguen contando compras, no sellos.
+        Movimientos.Add(Movimiento.Nuevo(TipoMovimiento.Sello, ahora, cargadoPor, cantidad, monto));
         return Resultado.Ok();
     }
 
-    /// <summary>Canjea el premio: descuenta los sellos y genera el canje con el código para la caja.</summary>
+    /// <summary>
+    /// Carga los sellos que el cliente ya tenía en la tarjeta de cartón del comercio. Se puede hacer una sola vez por tarjeta.
+    /// No cuenta como visita (no cambia el ritmo del cliente) ni respeta la espera entre sellos.
+    /// </summary>
+    public Resultado MigrarSellosDePapel(ProgramaSellos programa, int sellos, DateTime ahora, string? cargadoPor)
+    {
+        var max = MaxSellosDePapel(programa);
+        if (sellos < 1 || sellos > max) return Error.Validacion($"Podés cargar entre 1 y {max} sellos de la tarjeta de papel.");
+        if (TienePapelMigrado) return Error.Conflicto("A esta tarjeta ya se le cargaron los sellos de papel.");
+
+        SellosActuales += sellos;
+        SellosTotales += sellos;
+        Movimientos.Add(Movimiento.Nuevo(TipoMovimiento.Migracion, ahora, cargadoPor, sellos));
+        return Resultado.Ok();
+    }
+
+    /// <summary>Tope de sellos de papel: hasta dos tarjetas llenas (por si tenía una completa sin canjear).</summary>
+    public static int MaxSellosDePapel(ProgramaSellos programa) => programa.SellosNecesarios * 2;
+
+    public bool TienePapelMigrado => Movimientos.Any(m => m.Tipo == TipoMovimiento.Migracion);
+
     /// <summary>Si se puede canjear el premio ahora. Sirve para no generar un código de canje en vano.</summary>
     public Resultado PuedeCanjear(ProgramaSellos programa) =>
         EstaCompleta(programa)
             ? Resultado.Ok()
             : Error.Conflicto($"Todavía te faltan {programa.SellosNecesarios - SellosActuales} sellos.");
 
+    /// <summary>Canjea un premio: descuenta los sellos necesarios (el sobrante queda) y genera el canje con el código para la caja.</summary>
     public Resultado<Canje> Canjear(ProgramaSellos programa, string codigo, DateTime ahora)
     {
         if (PuedeCanjear(programa) is { Exito: false } no) return no.Error!;
@@ -91,12 +129,37 @@ public class Tarjeta
 
     public void CambiarPromos(bool acepta) => AceptaPromos = acepta;
 
+    /// <summary>
+    /// Si con esta visita corresponde pedirle la reseña de Google: justo en la visita configurada,
+    /// con link cargado, si acepta promos y si nunca se le pidió.
+    /// </summary>
+    public bool CorrespondePedirResena(int visitas, ProgramaSellos programa, string? linkResena) =>
+        programa.PedirResenaTrasVisitas is { } n && visitas == n
+        && !string.IsNullOrWhiteSpace(linkResena) && AceptaPromos && ResenaPedidaEn is null;
+
+    public void MarcarResenaPedida(DateTime ahora) => ResenaPedidaEn ??= ahora;
+
+    /// <summary>Si el recuadro "Dejá tu reseña" sigue a la vista en la billetera.</summary>
+    public bool ResenaPendiente => ResenaPedidaEn is not null && ResenaRespuesta is null;
+
+    /// <summary>El cliente contesta el pedido de reseña. No se verifica si de verdad la dejó.</summary>
+    public Resultado ResponderResena(RespuestaResena respuesta, DateTime ahora)
+    {
+        if (ResenaPedidaEn is null) return Error.Conflicto("No te pedimos una reseña para este comercio.");
+        ResenaRespuesta = respuesta;
+        ResenaRespondidaEn = ahora;
+        return Resultado.Ok();
+    }
+
     /// <summary>Fechas de las visitas (cada sello sumado), para medir el ritmo del cliente.</summary>
     public List<DateTime> Visitas() =>
         Movimientos.Where(m => m.Tipo == TipoMovimiento.Sello).Select(m => m.Fecha).ToList();
 }
 
-public enum TipoMovimiento { Sello, Canje, Anulacion }
+/// <summary>Migracion: sellos cargados de una tarjeta de papel (no es una visita).</summary>
+public enum TipoMovimiento { Sello, Canje, Anulacion, Migracion }
+
+public enum RespuestaResena { Dejada, AhoraNo }
 
 /// <summary>Registro de auditoría: cada sello y cada canje, con quién lo hizo.</summary>
 public class Movimiento
@@ -109,9 +172,13 @@ public class Movimiento
     public TipoMovimiento Tipo { get; private set; }
     public DateTime Fecha { get; private set; } = DateTime.UtcNow;
     public string? CargadoPor { get; private set; }
+    /// <summary>Sellos que sumó este movimiento (una compra puede dar varios).</summary>
+    public int Cantidad { get; private set; } = 1;
+    /// <summary>Monto de la compra, si la caja lo cargó.</summary>
+    public decimal? Monto { get; private set; }
 
-    internal static Movimiento Nuevo(TipoMovimiento tipo, DateTime fecha, string? cargadoPor) =>
-        new() { Tipo = tipo, Fecha = fecha, CargadoPor = cargadoPor };
+    internal static Movimiento Nuevo(TipoMovimiento tipo, DateTime fecha, string? cargadoPor, int cantidad = 1, decimal? monto = null) =>
+        new() { Tipo = tipo, Fecha = fecha, CargadoPor = cargadoPor, Cantidad = cantidad, Monto = monto };
 }
 
 /// <summary>Un premio canjeado, con el código que el cliente muestra en la caja.</summary>
@@ -146,7 +213,7 @@ public class Canje
     }
 }
 
-public enum TipoAviso { Cumpleanos, Reactivacion, TarjetaCompleta, Promo }
+public enum TipoAviso { Cumpleanos, Reactivacion, TarjetaCompleta, Promo, Resena }
 
 /// <summary>Cada aviso enviado a un cliente. Sirve para no repetir y para medir resultados.</summary>
 public class Aviso

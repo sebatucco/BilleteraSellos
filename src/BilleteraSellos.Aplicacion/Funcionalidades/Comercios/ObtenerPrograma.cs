@@ -1,8 +1,11 @@
 namespace BilleteraSellos.Aplicacion.Funcionalidades.Comercios;
 
-public sealed record ProgramaVista(int SellosNecesarios, string Premio, decimal CostoPremio, int DiasParaRetirar, int HorasEntreSellos)
+public sealed record ProgramaVista(int SellosNecesarios, string Premio, decimal CostoPremio, int DiasParaRetirar, int HorasEntreSellos,
+    decimal? MontoPorSello, decimal? CompraMinima, string? ResenaGoogleUrl, int? PedirResenaTrasVisitas)
 {
-    public static ProgramaVista Desde(ProgramaSellos p) => new(p.SellosNecesarios, p.Premio, p.CostoPremio, p.DiasParaRetirar, p.HorasEntreSellos);
+    public static ProgramaVista Desde(ProgramaSellos p, string? resenaGoogleUrl) =>
+        new(p.SellosNecesarios, p.Premio, p.CostoPremio, p.DiasParaRetirar, p.HorasEntreSellos, p.MontoPorSello, p.CompraMinima,
+            resenaGoogleUrl, p.PedirResenaTrasVisitas);
 }
 
 /// <summary>Las reglas de la tarjeta del comercio.</summary>
@@ -12,7 +15,7 @@ public sealed class ObtenerProgramaHandler(IAppDbContext db) : IQueryHandler<Obt
 {
     public async Task<Resultado<ProgramaVista>> Handle(ObtenerPrograma q, CancellationToken ct)
     {
-        var p = await db.Programas.AsNoTracking().FirstOrDefaultAsync(x => x.ComercioId == q.ComercioId, ct);
-        return p is null ? Error.NoEncontrado("El comercio no tiene tarjeta configurada.") : ProgramaVista.Desde(p);
+        var co = await db.Comercios.AsNoTracking().Include(x => x.Programa).FirstOrDefaultAsync(x => x.Id == q.ComercioId, ct);
+        return co?.Programa is null ? Error.NoEncontrado("El comercio no tiene tarjeta configurada.") : ProgramaVista.Desde(co.Programa, co.ResenaGoogleUrl);
     }
 }

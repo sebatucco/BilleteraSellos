@@ -9,7 +9,7 @@ public sealed record TarjetaEnBilletera(
     int TarjetaId, int ComercioId, string Comercio, string Rubro, string Direccion, string Color,
     int SellosActuales, int SellosNecesarios, string Premio, bool Completa,
     Nivel Nivel, int SellosTotales, int? FaltanParaSiguienteNivel,
-    bool AceptaPromos, string? ResenaGoogleUrl, List<CanjePendiente> CanjesPendientes);
+    bool AceptaPromos, string? ResenaGoogleUrl, List<CanjePendiente> CanjesPendientes, bool PedirResena);
 
 public sealed record BilleteraVista(int ClienteId, string Nombre, string CodigoQr, List<TarjetaEnBilletera> Tarjetas);
 
@@ -37,7 +37,8 @@ public sealed class ObtenerBilleteraHandler(IAppDbContext db, IReloj reloj) : IQ
                     t.SellosActuales, p.SellosNecesarios, p.Premio, t.EstaCompleta(p),
                     t.Nivel, t.SellosTotales, Niveles.FaltanParaSiguiente(t.SellosTotales),
                     t.AceptaPromos, co.ResenaGoogleUrl,
-                    t.Canjes.Where(k => k.EstaPendiente(ahora)).Select(k => new CanjePendiente(k.Codigo, k.Premio, k.VenceEn)).ToList());
+                    t.Canjes.Where(k => k.EstaPendiente(ahora)).Select(k => new CanjePendiente(k.Codigo, k.Premio, k.VenceEn)).ToList(),
+                    t.ResenaPendiente && co.ResenaGoogleUrl is not null);
             }).ToList();
 
         return new BilleteraVista(c.Id, c.Nombre, c.CodigoQr, items);
